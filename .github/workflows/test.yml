@@ -1,0 +1,38 @@
+name: Run Tests
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        include:
+          - { target: linux-64, os: ubuntu-latest }
+          - { target: osx-arm64, os: macos-latest }
+          - { target: linux-aarch64, os: ubuntu-24.04-arm }
+      fail-fast: false
+
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 5
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - uses: prefix-dev/setup-pixi@v0.8.10
+        with:
+          pixi-version: v0.47.0
+
+      - name: Run tests
+        shell: bash
+        run: pixi run tests

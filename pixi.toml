@@ -1,0 +1,55 @@
+[workspace]
+description = "Mojo SQLite3 Bindings"
+authors = ["Mikhail Tavarez <miktavarez@gmail.com>"]
+channels = ["https://repo.prefix.dev/mojo-community", "conda-forge", "https://conda.modular.com/max-nightly", "https://prefix.dev/pixi-build-backends"]
+platforms = ["osx-arm64", "linux-64", "linux-aarch64"]
+license = "MIT"
+license-file = "LICENSE"
+readme = "README.md"
+homepage = "https://github.com/thatstoasty/mojo-sqlite3"
+repository = "https://github.com/thatstoasty/mojo-sqlite3"
+preview = ["pixi-build"]
+
+[feature.util.tasks]
+tests = "mojo scripts/util.mojo tests"
+benchmarks = "mojo scripts/util.mojo benchmarks"
+examples = "mojo scripts/util.mojo examples"
+
+# Linting and Formatting
+lint_docs = "python3 scripts/check-docstrings.py"
+mojo_format = "mojo format slight --line-length 120"
+sort_imports = "isort **/*.mojo -m 3 --line-length 120 --lines-after-imports 2 --trailing-comma"
+format = [{ task = "mojo_format" }, { task = "sort_imports" }]
+
+# Build and publish
+build = { cmd = "python3 scripts/util.py build-conda-package" }
+publish = { cmd = "python3 scripts/util.py publish", env = { PREFIX_API_KEY = "$PREFIX_API_KEY" } }
+
+[package]
+name = "slight"
+version = "25.6.0"
+
+[package.build]
+backend = { name = "pixi-build-mojo", version = "*" }
+
+[dependencies]
+mojo = ">=0.25.6.0,<0.25.8.0"
+sqlite = ">=3.50.4"
+
+[package.build-dependencies]
+mojo-compiler = ">=0.25.6.0,<0.25.8.0"
+
+[package.host-dependencies]
+mojo = ">=0.25.6.0,<0.25.8.0"
+sqlite = ">=3.50.4"
+
+[package.run-dependencies]
+mojo = ">=0.25.6.0,<0.25.8.0"
+sqlite = ">=3.50.4"
+
+[feature.util.dependencies]
+isort = ">=6.0.1,<7"
+
+[environments]
+default = { solve-group = "default" }
+util = { features = ["util"], solve-group = "default" }

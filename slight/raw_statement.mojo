@@ -1,0 +1,279 @@
+from slight.c.api import get_sqlite3_handle
+from slight.result import SQLite3Result
+from slight.c.types import sqlite3_stmt, sqlite3_destructor_type
+from slight.c.sqlite_string import SQLiteMallocString
+
+
+@fieldwise_init
+struct RawStatement(Boolable, Movable):
+    """A raw SQL statement wrapper around a pointer to a `sqlite3_stmt`."""
+
+    var stmt: UnsafePointer[sqlite3_stmt]
+    """A pointer to the `sqlite3_stmt` that represents this statement."""
+
+    fn __bool__(self) -> Bool:
+        """Returns True if the statement is valid (i.e., the stmt pointer is not null)."""
+        return Bool(self.stmt)
+    
+    fn __del__(deinit self):
+        """Finalizes the statement when it is deleted."""
+        if self.stmt:
+            _ = self.finalize()
+
+    fn column_int64(self, idx: UInt) -> Int64:
+        """Returns the value of the specified column as a 64-bit integer.
+
+        Args:
+            idx: The index of the column to retrieve.
+
+        Returns:
+            The value of the specified column as a 64-bit integer.
+        """
+        return get_sqlite3_handle()[].column_int64(self.stmt, Int32(idx))
+
+    fn column_double(self, idx: UInt) -> Float64:
+        """Returns the value of the specified column as a double-precision float.
+
+        Args:
+            idx: The index of the column to retrieve.
+
+        Returns:
+            The value of the specified column as a Float64.
+        """
+        return get_sqlite3_handle()[].column_double(self.stmt, Int32(idx))
+
+    fn column_text(self, idx: UInt) raises -> StringSlice[origin_of(self)]:
+        """Returns the value of the specified column as a text string.
+
+        Args:
+            idx: The index of the column to retrieve.
+
+        Returns:
+            The value of the specified column as a StringSlice.
+
+        Raises:
+            Error: If the column contains NULL data unexpectedly.
+        """
+        var ptr = get_sqlite3_handle()[].column_text(self.stmt, Int32(idx))
+        if not ptr:
+            raise Error("unexpected SQLITE_TEXT column type with NULL data")
+        return StringSlice[origin_of(self)](unsafe_from_utf8_ptr=ptr)
+
+    fn column_blob(self, idx: UInt) raises -> Span[Byte, origin_of(self)]:
+        """Returns the value of the specified column as binary data.
+
+        Args:
+            idx: The index of the column to retrieve.
+
+        Returns:
+            The value of the specified column as a Span of bytes.
+
+        Raises:
+            Error: If the column contains NULL data or has negative length.
+        """
+        var ptr = get_sqlite3_handle()[].column_blob(self.stmt, Int32(idx)).bitcast[Byte]()
+        if not ptr:
+            raise Error("unexpected SQLITE_BLOB column type with NULL data")
+
+        var length = get_sqlite3_handle()[].column_bytes(self.stmt, Int32(idx))
+        if length < 0:
+            raise Error("unexpected SQLITE_BLOB column type with negative length: ", length)
+
+        return Span[Byte, origin_of(self)](
+            ptr=ptr,
+            length=UInt(length),
+        )
+
+    fn column_type(self, idx: UInt) -> Int32:
+        """Returns the data type of the specified column.
+
+        Args:
+            idx: The index of the column to retrieve the type for.
+
+        Returns:
+            The SQLite data type constant for the column.
+        """
+        return get_sqlite3_handle()[].column_type(self.stmt, Int32(idx))
+
+    fn column_count(self) -> Int32:
+        """Returns the number of columns in the result set.
+
+        Returns:
+            The number of columns returned by the prepared statement.
+        """
+        return get_sqlite3_handle()[].column_count(self.stmt)
+    
+    fn bind_parameter_index(self, var name: String) -> Optional[UInt]:
+        """Returns the index of the parameter with the given name.
+
+        Args:
+            name: The name of the parameter (e.g., ":param", "@param", "$param").
+
+        Returns:
+            The 1-based index of the parameter, or 0 if not found.
+        """
+        var result = get_sqlite3_handle()[].bind_parameter_index(self.stmt, name.unsafe_cstr_ptr())
+        if result == 0:
+            return None
+        
+        return UInt(result)
+
+    fn bind_parameter_count(self) -> Int32:
+        """Returns the number of parameters in the prepared statement.
+
+        Returns:
+            The number of SQL parameters (?, ?NNN, :VVV, @VVV, $VVV) in the statement.
+        """
+        return get_sqlite3_handle()[].bind_parameter_count(self.stmt)
+    
+    fn bind_null(self, index: UInt) -> SQLite3Result:
+        """Binds a NULL value to the specified parameter.
+
+        Args:
+            index: The 1-based index of the parameter to bind.
+        """
+        return get_sqlite3_handle()[].bind_null(self.stmt, Int32(index))
+        
+
+    fn bind_int64(self, index: UInt, value: Int64) -> SQLite3Result:
+        """Binds a 64-bit integer value to the specified parameter.
+
+        Args:
+            index: The 1-based index of the parameter to bind.
+            value: The integer value to bind.
+        """
+        return get_sqlite3_handle()[].bind_int64(self.stmt, Int32(index), value)
+    
+    fn bind_double(self, index: UInt, value: Float64) -> SQLite3Result:
+        """Binds a double-precision float value to the specified parameter.
+
+        Args:
+            index: The 1-based index of the parameter to bind.
+            value: The float value to bind.
+        """
+        return get_sqlite3_handle()[].bind_double(self.stmt, Int32(index), value)
+
+    fn bind_text(self, index: UInt, var value: String, destructor: sqlite3_destructor_type) -> SQLite3Result:
+        """Binds a text string value to the specified parameter.
+
+        Args:
+            index: The 1-based index of the parameter to bind.
+            value: The string value to bind.
+            destructor: The destructor function to call when SQLite is done with the text.
+        """
+        return get_sqlite3_handle()[].bind_text(
+            self.stmt, Int32(index), value.unsafe_cstr_ptr(), len(value), destructor
+        )
+    
+    fn sql(self) -> Optional[StringSlice[origin_of(self)]]:
+        """Returns the original SQL text of the prepared statement.
+
+        Returns:
+            The original SQL statement used to prepare this statement.
+        """
+        if not self.stmt:
+            return None
+        
+        # We don't really know the origin of this string, it's a pointer returned by SQLite.
+        # But it should be valid as long as the statement is valid, so we use the same origin as the statement.
+        return StringSlice[origin_of(self)](unsafe_from_utf8_ptr=get_sqlite3_handle()[].sql(self.stmt))
+
+    fn expanded_sql(self) -> Optional[SQLiteMallocString]:
+        """Returns the SQL text of the prepared statement with bound parameters expanded.
+
+        Returns:
+            The SQL statement with parameter values substituted.
+        """
+        if not self.stmt:
+            return None
+                
+        # We don't really know the origin of this string, it's a pointer returned by SQLite.
+        # But it should be valid as long as the statement is valid, so we use the same origin as the statement.
+        return get_sqlite3_handle()[].expanded_sql(self.stmt)
+
+    # TODO: Change this to var when we can call deinit explicitly in deinit functions.
+    fn finalize(mut self) -> SQLite3Result:
+        """Destroys the prepared statement and releases its resources.
+
+        After calling this method, the statement should not be used again.
+
+        Returns:
+            The SQLite result code from finalizing the statement.
+        """
+        var old_stmt = self.stmt
+        self.stmt = UnsafePointer[sqlite3_stmt]()
+
+        return get_sqlite3_handle()[].finalize(old_stmt)
+
+    fn step(self) raises -> SQLite3Result:
+        """Executes the prepared statement and advances to the next result row.
+
+        Returns:
+            SQLITE_ROW if a new row is available, SQLITE_DONE if execution is complete,
+            or another SQLite result code.
+
+        Raises:
+            Error: If the step operation fails.
+        """
+        return get_sqlite3_handle()[].step(self.stmt)
+
+    fn reset(self) raises -> SQLite3Result:
+        """Resets the prepared statement back to its initial state.
+
+        This allows the statement to be re-executed with the same or different
+        bound parameter values.
+
+        Returns:
+            The SQLite result code.
+
+        Raises:
+            Error: If the reset operation fails.
+        """
+        return get_sqlite3_handle()[].reset(self.stmt)
+
+    fn clear_bindings(self) raises -> SQLite3Result:
+        """Clears all bound parameter values from the prepared statement.
+
+        This allows the statement to be re-executed with new parameter values.
+
+        Returns:
+            The SQLite result code.
+
+        Raises:
+            Error: If the clear bindings operation fails.
+        """
+        return get_sqlite3_handle()[].clear_bindings(self.stmt)
+
+    fn column_name(self, idx: UInt) -> Optional[StringSlice[origin_of(self)]]:
+        """Returns the name of the specified column.
+
+        Args:
+            idx: The index of the column.
+
+        Returns:
+            The name of the column as a CStr, or None if the index is out of bounds.
+        """
+        var i = Int32(idx)
+        if i < 0 or i >= self.column_count():
+            return None
+        
+        # Null ptr indicates an OOM, which we treat as None here.
+        var ptr = get_sqlite3_handle()[].column_name(self.stmt, i)
+        if not ptr:
+            return None
+        
+        # TODO: Handle raising for non utf8 names
+        return StringSlice[origin_of(self)](unsafe_from_utf8_ptr=ptr)
+
+    fn is_explain(self) -> Int32:
+        """Returns whether the prepared statement is an EXPLAIN statement.
+        
+        * 1 if the prepared statement is an EXPLAIN statement,
+        * 2 if the statement is an EXPLAIN QUERY PLAN,
+        * 0 if it is an ordinary statement or a NULL pointer.
+        """
+        return get_sqlite3_handle()[].stmt_isexplain(self.stmt)
+
+    fn is_read_only(self) -> Bool:
+        """Returns whether the prepared statement is read-only."""
+        return get_sqlite3_handle()[].stmt_readonly(self.stmt) != 0
