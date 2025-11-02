@@ -1,9 +1,8 @@
 import os
 import pathlib
 from sys import ffi, env_get_string
-from sys.ffi import DLHandle, c_char, c_int, c_uint, CompilationTarget
+from sys.ffi import DLHandle, c_char, c_uchar, c_int, c_uint, c_ulong, CompilationTarget
 
-from memory import OpaquePointer, UnsafePointer
 from slight.c.types import (
     sqlite3_backup,
     sqlite3_blob,
@@ -27,21 +26,29 @@ from slight.c.types import (
 )
 
 
-alias sqlite3_rtree_query_callback = fn (
-    db: UnsafePointer[sqlite3_connection],
-    zQueryFunc: UnsafePointer[c_char, mut=False],
-    xQueryFunc: fn (UnsafePointer[sqlite3_rtree_query_info]) -> c_int,
-    pContext: OpaquePointer,
-    xDestructor: fn (OpaquePointer) -> NoneType,
-) -> c_int
+# alias sqlite3_rtree_query_callback = fn (
+#     db: UnsafeMutPointer[sqlite3_connection],
+#     zQueryFunc: UnsafeImmutPointer[c_char],
+#     xQueryFunc: fn (UnsafeMutPointer[sqlite3_rtree_query_info]) -> c_int,
+#     pContext: OpaqueMutPointer,
+#     xdestructor: fn (OpaqueMutPointer[origin]) -> NoneType,
+# ) -> c_int
 
-alias ExecCallbackFn = fn (
-    data: OpaquePointer,
+alias ExecCallbackFn = fn [argv_origin: MutOrigin, col_name_origin: MutOrigin](
+    data: OpaqueMutPointer,
     argc: Int32,
-    argv: UnsafePointer[UnsafePointer[c_char]],
-    azColName: UnsafePointer[UnsafePointer[c_char]],
+    argv: UnsafeMutPointer[UnsafeMutPointer[c_char, argv_origin]],
+    azColName: UnsafeMutPointer[UnsafeMutPointer[c_char, col_name_origin]],
 ) -> c_int
 
+alias AuthCallbackFn = fn [origin: MutOrigin, origin2: ImmutOrigin, origin3: ImmutOrigin, origin4: ImmutOrigin, origin5: ImmutOrigin](
+    OpaqueMutPointer[origin],
+    c_int,
+    UnsafeImmutPointer[c_char, origin2],
+    UnsafeImmutPointer[c_char, origin3],
+    UnsafeImmutPointer[c_char, origin4],
+    UnsafeImmutPointer[c_char, origin5],
+) -> c_int
 
 alias SQLITE_OPEN_READONLY: Int32 = 0x00000001  # Ok for sqlite3_open_v2()
 alias SQLITE_OPEN_READWRITE: Int32 = 0x00000002  # Ok for sqlite3_open_v2()
@@ -65,7 +72,6 @@ alias SQLITE_OPEN_PRIVATECACHE: Int32 = 0x00040000  # Ok for sqlite3_open_v2()
 alias SQLITE_OPEN_WAL: Int32 = 0x00080000  # VFS only
 alias SQLITE_OPEN_NOFOLLOW: Int32 = 0x01000000  # Ok for sqlite3_open_v2()
 alias SQLITE_OPEN_EXRESCODE: Int32 = 0x02000000  # Extended result codes
-
 
 alias SQLITE_OK: Int32 = 0
 alias SQLITE_ERROR: Int32 = 1
@@ -184,24 +190,7 @@ struct _sqlite3(Movable):
         except e:
             self.lib = os.abort[ffi.DLHandle](String("Failed to load the SQLite library: ", e))
 
-    fn open(self, var path: String, out_database: UnsafePointer[sqlite3_connection]) -> c_int:
-        """Open a connection to a SQLite database file.
-
-        This method opens a database connection to a SQLite database file.
-        It's a direct binding to the sqlite3_open() C function.
-
-        Args:
-            path: Path to the database file to open or create.
-            out_database: Output pointer that will be set to point to the database connection.
-
-        Returns:
-            SQLITE_OK on success, or an error code on failure.
-        """
-        return self.lib.get_function[
-            fn (UnsafePointer[c_char, mut=False], UnsafePointer[UnsafePointer[sqlite3_connection]]) -> c_int
-        ]("sqlite3_open")(path.unsafe_cstr_ptr(), UnsafePointer(to=out_database))
-
-    fn sqlite3_libversion(self) -> UnsafePointer[c_char, mut=False]:
+    fn sqlite3_libversion(self) -> UnsafeImmutPointer[c_char]:
         """Get the SQLite library version string.
 
         Returns a pointer to a string containing the version of the SQLite
@@ -211,9 +200,9 @@ struct _sqlite3(Movable):
         Returns:
             Pointer to a null-terminated string containing the SQLite version.
         """
-        return self.lib.get_function[fn () -> UnsafePointer[c_char, mut=False]]("sqlite3_libversion")()
+        return self.lib.get_function[fn () -> UnsafeImmutPointer[c_char]]("sqlite3_libversion")()
 
-    fn sqlite3_sourceid(self) -> UnsafePointer[c_char, mut=False]:
+    fn sqlite3_sourceid(self) -> UnsafeImmutPointer[c_char]:
         """Get the SQLite source ID.
 
         Returns a pointer to a string containing the date and time of
@@ -222,7 +211,7 @@ struct _sqlite3(Movable):
         Returns:
             Pointer to a string containing the SQLite source identifier.
         """
-        return self.lib.get_function[fn () -> UnsafePointer[c_char, mut=False]]("sqlite3_sourceid")()
+        return self.lib.get_function[fn () -> UnsafeImmutPointer[c_char]]("sqlite3_sourceid")()
 
     fn sqlite3_libversion_number(self) -> c_int:
         """Get the SQLite library version number.
@@ -236,7 +225,7 @@ struct _sqlite3(Movable):
         """
         return self.lib.get_function[fn () -> c_int]("sqlite3_libversion_number")()
 
-    fn sqlite3_compileoption_used(self, zOptName: UnsafePointer[c_char, mut=False]) -> c_int:
+    fn sqlite3_compileoption_used(self, zOptName: UnsafeImmutPointer[c_char]) -> c_int:
         """Test whether a compile-time option was used.
 
         Returns 0 or 1 indicating whether the specified option was defined
@@ -249,11 +238,11 @@ struct _sqlite3(Movable):
         Returns:
             1 if the option was used, 0 otherwise.
         """
-        return self.lib.get_function[fn (zOptName: UnsafePointer[c_char, mut=False]) -> c_int](
+        return self.lib.get_function[fn (zOptName: type_of(zOptName)) -> c_int](
             "sqlite3_compileoption_used"
         )(zOptName)
 
-    fn sqlite3_compileoption_get(self, N: c_int) -> UnsafePointer[c_char, mut=False]:
+    fn sqlite3_compileoption_get(self, N: c_int) -> UnsafeImmutPointer[c_char]:
         """Get the N-th compile-time option.
 
         Allows iterating over the list of options that were defined at
@@ -266,7 +255,7 @@ struct _sqlite3(Movable):
         Returns:
             Pointer to the N-th compile option string, or NULL if N is out of range.
         """
-        return self.lib.get_function[fn (N: c_int) -> UnsafePointer[c_char, mut=False]]("sqlite3_compileoption_get")(N)
+        return self.lib.get_function[fn (N: c_int) -> UnsafeImmutPointer[c_char]]("sqlite3_compileoption_get")(N)
 
     fn sqlite3_threadsafe(self) -> c_int:
         """Test if the library is threadsafe.
@@ -279,7 +268,7 @@ struct _sqlite3(Movable):
         """
         return self.lib.get_function[fn () -> c_int]("sqlite3_threadsafe")()
 
-    fn sqlite3_close(self, connection: UnsafePointer[sqlite3_connection]) -> c_int:
+    fn sqlite3_close(self, connection: UnsafeMutPointer[sqlite3_connection]) -> c_int:
         """Closing A Database Connection.
 
         ^The `sqlite3_close()` and `sqlite3_close_v2()` routines are destructors
@@ -311,14 +300,14 @@ struct _sqlite3(Movable):
         The C parameter to [sqlite3_close(C)] and [sqlite3_close_v2(C)]
         must be either a NULL
         pointer or an [sqlite3] object pointer obtained
-        from [sqlite3_open()], [sqlite3_open16()], or
+        from [sqlite3_open()], or
         [sqlite3_open_v2()], and not previously closed.
         ^Calling `sqlite3_close()` or `sqlite3_close_v2()` with a NULL pointer
         argument is a harmless no-op.
         """
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_connection]) -> c_int]("sqlite3_close")(connection)
+        return self.lib.get_function[fn (type_of(connection)) -> c_int]("sqlite3_close")(connection)
 
-    fn sqlite3_close_v2(self, connection: UnsafePointer[sqlite3_connection]) -> c_int:
+    fn sqlite3_close_v2(self, connection: UnsafeMutPointer[sqlite3_connection]) -> c_int:
         """Closing A Database Connection.
 
         ^The `sqlite3_close()` and `sqlite3_close_v2()` routines are destructors
@@ -350,20 +339,20 @@ struct _sqlite3(Movable):
         The C parameter to [sqlite3_close(C)] and [sqlite3_close_v2(C)]
         must be either a NULL
         pointer or an [sqlite3] object pointer obtained
-        from [sqlite3_open()], [sqlite3_open16()], or
+        from [sqlite3_open()], or
         [sqlite3_open_v2()], and not previously closed.
         ^Calling `sqlite3_close()` or `sqlite3_close_v2()` with a NULL pointer
         argument is a harmless no-op.
         """
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_connection]) -> c_int]("sqlite3_close_v2")(connection)
+        return self.lib.get_function[fn (type_of(connection)) -> c_int]("sqlite3_close_v2")(connection)
 
-    fn sqlite3_exec(
+    fn sqlite3_exec[origin: MutOrigin](
         self,
-        db: UnsafePointer[sqlite3_connection],
-        sql: UnsafePointer[c_char, mut=False],
-        callback: UnsafePointer[ExecCallbackFn],
-        pArg: OpaquePointer,
-        pErrMsg: UnsafePointer[UnsafePointer[c_char]],
+        db: UnsafeMutPointer[sqlite3_connection],
+        sql: UnsafeImmutPointer[c_char],
+        callback: UnsafeMutPointer[ExecCallbackFn],
+        pArg: OpaqueMutPointer,
+        pErrMsg: UnsafeMutPointer[UnsafeMutPointer[c_char, origin]],
     ) -> c_int:
         """One-Step Query Execution Interface.
 
@@ -384,11 +373,7 @@ struct _sqlite3(Movable):
         """
         return self.lib.get_function[
             fn (
-                db: UnsafePointer[sqlite3_connection],
-                sql: UnsafePointer[c_char, mut=False],
-                callback: UnsafePointer[ExecCallbackFn],
-                pArg: OpaquePointer,
-                pErrMsg: UnsafePointer[UnsafePointer[c_char]],
+                type_of(db), type_of(sql), type_of(callback), type_of(pArg), type_of(pErrMsg),
             ) -> c_int
         ]("sqlite3_exec")(db, sql, callback, pArg, pErrMsg)
 
@@ -474,7 +459,7 @@ struct _sqlite3(Movable):
         """
         return self.lib.get_function[fn (c_int) -> c_int]("sqlite3_config")(op)
 
-    fn sqlite3_db_config(self, db: UnsafePointer[sqlite3_connection], op: c_int) -> c_int:
+    fn sqlite3_db_config(self, db: UnsafeMutPointer[sqlite3_connection], op: c_int) -> c_int:
         """Configure Database Connection Options.
 
         The sqlite3_db_config() interface is used to make configuration
@@ -494,11 +479,11 @@ struct _sqlite3(Movable):
         Returns:
             SQLITE_OK on success, or an error code on failure.
         """
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_connection], c_int) -> c_int]("sqlite3_db_config")(
+        return self.lib.get_function[fn (type_of(db), type_of(op)) -> c_int]("sqlite3_db_config")(
             db, op
         )
 
-    fn sqlite3_extended_result_codes(self, db: UnsafePointer[sqlite3_connection], onoff: c_int) -> c_int:
+    fn sqlite3_extended_result_codes(self, db: UnsafeMutPointer[sqlite3_connection], onoff: c_int) -> c_int:
         """Enable Or Disable Extended Result Codes.
 
         The sqlite3_extended_result_codes() routine enables or disables the
@@ -518,11 +503,11 @@ struct _sqlite3(Movable):
         Returns:
             SQLITE_OK on success, or an error code on failure.
         """
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_connection], /, onoff: c_int) -> c_int](
+        return self.lib.get_function[fn (type_of(db), type_of(onoff)) -> c_int](
             "sqlite3_extended_result_codes"
         )(db, onoff)
 
-    fn sqlite3_last_insert_rowid(self, db: UnsafePointer[sqlite3_connection]) -> sqlite3_int64:
+    fn sqlite3_last_insert_rowid(self, db: UnsafeMutPointer[sqlite3_connection]) -> sqlite3_int64:
         """Last Insert Rowid.
 
         Each entry in most SQLite tables has a unique 64-bit signed integer key
@@ -536,11 +521,11 @@ struct _sqlite3(Movable):
         Returns:
             The rowid of the most recent INSERT, or 0 if no INSERTs have been performed.
         """
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_connection]) -> sqlite3_int64](
+        return self.lib.get_function[fn (type_of(db)) -> sqlite3_int64](
             "sqlite3_last_insert_rowid"
         )(db)
 
-    fn sqlite3_set_last_insert_rowid(self, db: UnsafePointer[sqlite3_connection], rowid: sqlite3_int64) -> NoneType:
+    fn sqlite3_set_last_insert_rowid(self, db: UnsafeMutPointer[sqlite3_connection], rowid: sqlite3_int64) -> NoneType:
         """Set The Last Insert Rowid.
 
         The sqlite3_set_last_insert_rowid() interface allows the application
@@ -555,11 +540,11 @@ struct _sqlite3(Movable):
             db: Database connection handle.
             rowid: The rowid value to set as the last insert rowid.
         """
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_connection], sqlite3_int64) -> NoneType](
+        return self.lib.get_function[fn (type_of(db), sqlite3_int64) -> NoneType](
             "sqlite3_set_last_insert_rowid"
         )(db, rowid)
 
-    fn sqlite3_changes(self, db: UnsafePointer[sqlite3_connection]) -> c_int:
+    fn sqlite3_changes(self, db: UnsafeMutPointer[sqlite3_connection]) -> c_int:
         """Count The Number of Rows Modified.
 
         This function returns the number of rows modified, inserted or deleted
@@ -572,9 +557,9 @@ struct _sqlite3(Movable):
         Returns:
             Number of rows changed by the most recent INSERT, UPDATE, or DELETE.
         """
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_connection]) -> c_int]("sqlite3_changes")(db)
+        return self.lib.get_function[fn (type_of(db)) -> c_int]("sqlite3_changes")(db)
 
-    fn sqlite3_changes64(self, db: UnsafePointer[sqlite3_connection]) -> sqlite3_int64:
+    fn sqlite3_changes64(self, db: UnsafeMutPointer[sqlite3_connection]) -> sqlite3_int64:
         """Count The Number of Rows Modified (64-bit).
 
         This function works the same as sqlite3_changes() except that it
@@ -594,9 +579,9 @@ struct _sqlite3(Movable):
             Number of rows changed by the most recent INSERT, UPDATE, or DELETE
             as a 64-bit signed integer.
         """
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_connection]) -> sqlite3_int64]("sqlite3_changes64")(db)
+        return self.lib.get_function[fn (type_of(db)) -> sqlite3_int64]("sqlite3_changes64")(db)
 
-    fn sqlite3_total_changes(self, db: UnsafePointer[sqlite3_connection]) -> c_int:
+    fn sqlite3_total_changes(self, db: UnsafeMutPointer[sqlite3_connection]) -> c_int:
         """Count The Total Number of Rows Modified.
 
         This function returns the total number of rows inserted, modified or
@@ -614,9 +599,9 @@ struct _sqlite3(Movable):
         Returns:
             Total number of rows changed since the database connection was opened.
         """
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_connection]) -> c_int]("sqlite3_total_changes")(db)
+        return self.lib.get_function[fn (type_of(db)) -> c_int]("sqlite3_total_changes")(db)
 
-    fn sqlite3_total_changes64(self, db: UnsafePointer[sqlite3_connection]) -> sqlite3_int64:
+    fn sqlite3_total_changes64(self, db: UnsafeMutPointer[sqlite3_connection]) -> sqlite3_int64:
         """Count The Total Number of Rows Modified (64-bit).
 
         This function works the same as sqlite3_total_changes() except that it
@@ -636,11 +621,11 @@ struct _sqlite3(Movable):
             Total number of rows changed since the database connection was opened
             as a 64-bit signed integer.
         """
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_connection]) -> sqlite3_int64](
+        return self.lib.get_function[fn (type_of(db)) -> sqlite3_int64](
             "sqlite3_total_changes64"
         )(db)
 
-    fn sqlite3_interrupt(self, db: UnsafePointer[sqlite3_connection]) -> None:
+    fn sqlite3_interrupt(self, db: UnsafeMutPointer[sqlite3_connection]) -> None:
         """Interrupt A Long-Running Query.
 
         This routine causes any pending database operation to abort and
@@ -657,9 +642,9 @@ struct _sqlite3(Movable):
         Args:
             db: Database connection handle.
         """
-        self.lib.get_function[fn (UnsafePointer[sqlite3_connection]) -> None]("sqlite3_interrupt")(db)
+        self.lib.get_function[fn (type_of(db)) -> None]("sqlite3_interrupt")(db)
 
-    fn sqlite3_is_interrupted(self, db: UnsafePointer[sqlite3_connection]) -> c_int:
+    fn sqlite3_is_interrupted(self, db: UnsafeMutPointer[sqlite3_connection]) -> c_int:
         """Test To See If An Interrupt Is Pending.
 
         This routine returns 1 if sqlite3_interrupt() has been called
@@ -676,9 +661,9 @@ struct _sqlite3(Movable):
         Returns:
             1 if an interrupt is pending, 0 otherwise.
         """
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_connection]) -> c_int]("sqlite3_is_interrupted")(db)
+        return self.lib.get_function[fn (type_of(db)) -> c_int]("sqlite3_is_interrupted")(db)
 
-    fn sqlite3_complete(self, sql: UnsafePointer[c_char, mut=False]) -> c_int:
+    fn sqlite3_complete(self, sql: UnsafeImmutPointer[c_char]) -> c_int:
         """Determine If An SQL Statement Is Complete.
 
         These routines are useful during command-line input to determine if the
@@ -696,185 +681,160 @@ struct _sqlite3(Movable):
         Returns:
             Non-zero if the SQL statement is complete, zero if incomplete.
         """
-        return self.lib.get_function[fn (sql: UnsafePointer[c_char, mut=False]) -> c_int]("sqlite3_complete")(sql)
+        return self.lib.get_function[fn (type_of(sql)) -> c_int]("sqlite3_complete")(sql)
 
-    fn sqlite3_complete16(self, sql: OpaquePointer) -> c_int:
-        return self.lib.get_function[fn (sql: OpaquePointer) -> c_int]("sqlite3_complete16")(sql)
-
-    fn sqlite3_busy_handler(
-        self, db: UnsafePointer[sqlite3_connection], callback: fn (OpaquePointer, c_int) -> c_int, arg: OpaquePointer
+    fn sqlite3_busy_handler[origin: MutOrigin](
+        self, db: UnsafeMutPointer[sqlite3_connection], callback: fn (UnsafePointerV2[NoneType, origin], c_int) -> c_int, arg: OpaqueMutPointer
     ) -> c_int:
         return self.lib.get_function[
-            fn (UnsafePointer[sqlite3_connection], fn (OpaquePointer, c_int) -> c_int, OpaquePointer) -> c_int
+            fn (type_of(db), type_of(callback), type_of(arg)) -> c_int
         ]("sqlite3_busy_handler")(db, callback, arg)
 
-    fn sqlite3_busy_timeout(self, db: UnsafePointer[sqlite3_connection], ms: c_int) -> c_int:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_connection], /, ms: c_int) -> c_int](
+    fn sqlite3_busy_timeout(self, db: UnsafeMutPointer[sqlite3_connection], ms: c_int) -> c_int:
+        return self.lib.get_function[fn (type_of(db), /, ms: c_int) -> c_int](
             "sqlite3_busy_timeout"
         )(db, ms)
 
-    fn sqlite3_setlk_timeout(self, db: UnsafePointer[sqlite3_connection], ms: c_int, flags: c_int) -> c_int:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_connection], /, ms: c_int, flags: c_int) -> c_int](
+    fn sqlite3_setlk_timeout(self, db: UnsafeMutPointer[sqlite3_connection], ms: c_int, flags: c_int) -> c_int:
+        return self.lib.get_function[fn (type_of(db), /, ms: c_int, flags: c_int) -> c_int](
             "sqlite3_setlk_timeout"
         )(db, ms, flags)
 
-    fn sqlite3_get_table(
+    fn sqlite3_get_table[origin: MutOrigin, ptr_origin: MutOrigin, err_origin: MutOrigin](
         self,
-        db: UnsafePointer[sqlite3_connection],
-        sql: UnsafePointer[c_char, mut=False],
-        pazResult: UnsafePointer[UnsafePointer[UnsafePointer[c_char]]],
-        pnRow: UnsafePointer[c_int],
-        pnColumn: UnsafePointer[c_int],
-        pzErrmsg: UnsafePointer[UnsafePointer[c_char]],
+        db: UnsafeMutPointer[sqlite3_connection],
+        sql: UnsafeImmutPointer[c_char],
+        pazResult: UnsafeMutPointer[UnsafeMutPointer[UnsafeMutPointer[c_char, origin], ptr_origin]],
+        pnRow: UnsafeMutPointer[c_int],
+        pnColumn: UnsafeMutPointer[c_int],
+        pzErrmsg: UnsafeMutPointer[UnsafeMutPointer[c_char, err_origin]],
     ) -> c_int:
         return self.lib.get_function[
             fn (
-                db: UnsafePointer[sqlite3_connection],
-                sql: UnsafePointer[c_char, mut=False],
-                pazResult: UnsafePointer[UnsafePointer[UnsafePointer[c_char]]],
-                pnRow: UnsafePointer[c_int],
-                pnColumn: UnsafePointer[c_int],
-                pzErrmsg: UnsafePointer[UnsafePointer[c_char]],
+                type_of(db),
+                type_of(sql),
+                type_of(pazResult),
+                type_of(pnRow),
+                type_of(pnColumn),
+                type_of(pzErrmsg),
             ) -> c_int
         ]("sqlite3_get_table")(db, sql, pazResult, pnRow, pnColumn, pzErrmsg)
 
-    fn sqlite3_free_table(self, result: UnsafePointer[UnsafePointer[c_char]]) -> NoneType:
-        return self.lib.get_function[fn (result: UnsafePointer[UnsafePointer[c_char]]) -> NoneType](
+    fn sqlite3_free_table[origin: MutOrigin](self, result: UnsafeMutPointer[UnsafeMutPointer[c_char, origin]]) -> NoneType:
+        return self.lib.get_function[fn (type_of(result)) -> NoneType](
             "sqlite3_free_table"
         )(result)
 
-    fn sqlite3_mprintf(self, format: UnsafePointer[c_char, mut=False]) -> UnsafePointer[c_char]:
-        return self.lib.get_function[fn (UnsafePointer[c_char, mut=False]) -> UnsafePointer[c_char]]("sqlite3_mprintf")(
+    fn sqlite3_mprintf(self, format: UnsafeImmutPointer[c_char]) -> UnsafeMutPointer[c_char]:
+        return self.lib.get_function[fn (type_of(format)) -> UnsafeMutPointer[c_char]]("sqlite3_mprintf")(
             format
         )
 
     fn sqlite3_snprintf(
-        self, n: c_int, str: UnsafePointer[c_char], format: UnsafePointer[c_char, mut=False]
-    ) -> UnsafePointer[c_char]:
+        self, n: c_int, str: UnsafeMutPointer[c_char], format: UnsafeImmutPointer[c_char]
+    ) -> UnsafeMutPointer[c_char]:
         return self.lib.get_function[
-            fn (c_int, UnsafePointer[c_char], UnsafePointer[c_char, mut=False]) -> UnsafePointer[c_char]
+            fn (type_of(n), type_of(str), type_of(format)) -> UnsafeMutPointer[c_char]
         ]("sqlite3_snprintf")(n, str, format)
 
     # fn sqlite3_vmprintf(self):
-    #     return self.lib.get_function[fn(UnsafePointer[c_char, mut=False], va_list) -> UnsafePointer[c_char]]("sqlite3_vmprintf")()
+    #     return self.lib.get_function[fn(UnsafeImmutPointer[c_char], va_list) -> UnsafeMutPointer[c_char]]("sqlite3_vmprintf")()
 
     # fn sqlite3_vsnprintf(self):
-    #     return self.lib.get_function[fn(c_int, UnsafePointer[c_char], UnsafePointer[c_char, mut=False], va_list) -> UnsafePointer[c_char]]("sqlite3_vsnprintf")()
+    #     return self.lib.get_function[fn(c_int, UnsafeMutPointer[c_char], UnsafeImmutPointer[c_char], va_list) -> UnsafeMutPointer[c_char]]("sqlite3_vsnprintf")()
 
-    fn sqlite3_malloc(self, size: c_int) -> OpaquePointer:
-        return self.lib.get_function[fn (c_int) -> OpaquePointer]("sqlite3_malloc")(size)
+    fn sqlite3_malloc(self, size: c_int) -> OpaqueMutPointer:
+        return self.lib.get_function[fn (type_of(size)) -> OpaqueMutPointer]("sqlite3_malloc")(size)
 
-    fn sqlite3_malloc64(self, size: sqlite3_uint64) -> OpaquePointer:
-        return self.lib.get_function[fn (sqlite3_uint64) -> OpaquePointer]("sqlite3_malloc64")(size)
+    fn sqlite3_malloc64(self, size: sqlite3_uint64) -> OpaqueMutPointer:
+        return self.lib.get_function[fn (type_of(size)) -> OpaqueMutPointer]("sqlite3_malloc64")(size)
 
-    fn sqlite3_realloc(self, ptr: OpaquePointer, size: c_int) -> OpaquePointer:
-        return self.lib.get_function[fn (OpaquePointer, c_int) -> OpaquePointer]("sqlite3_realloc")(ptr, size)
+    fn sqlite3_realloc(self, ptr: OpaqueMutPointer, size: c_int) -> OpaqueMutPointer:
+        return self.lib.get_function[fn (type_of(ptr), type_of(size)) -> OpaqueMutPointer]("sqlite3_realloc")(ptr, size)
 
-    fn sqlite3_realloc64(self, ptr: OpaquePointer, size: sqlite3_uint64) -> OpaquePointer:
-        return self.lib.get_function[fn (OpaquePointer, sqlite3_uint64) -> OpaquePointer]("sqlite3_realloc64")(
+    fn sqlite3_realloc64(self, ptr: OpaqueMutPointer, size: sqlite3_uint64) -> OpaqueMutPointer:
+        return self.lib.get_function[fn (type_of(ptr), type_of(size)) -> OpaqueMutPointer]("sqlite3_realloc64")(
             ptr, size
         )
 
-    fn sqlite3_free(self, ptr: OpaquePointer) -> NoneType:
-        return self.lib.get_function[fn (OpaquePointer) -> NoneType]("sqlite3_free")(ptr)
+    fn sqlite3_free(self, ptr: OpaqueMutPointer) -> NoneType:
+        return self.lib.get_function[fn (type_of(ptr)) -> NoneType]("sqlite3_free")(ptr)
 
-    fn sqlite3_msize(self, ptr: OpaquePointer) -> sqlite3_uint64:
-        return self.lib.get_function[fn (OpaquePointer) -> sqlite3_uint64]("sqlite3_msize")(ptr)
+    fn sqlite3_msize(self, ptr: OpaqueMutPointer) -> sqlite3_uint64:
+        return self.lib.get_function[fn (type_of(ptr)) -> sqlite3_uint64]("sqlite3_msize")(ptr)
 
     fn sqlite3_memory_used(self) -> sqlite3_int64:
         return self.lib.get_function[fn () -> sqlite3_int64]("sqlite3_memory_used")()
 
     fn sqlite3_memory_highwater(self, resetFlag: c_int) -> sqlite3_int64:
-        return self.lib.get_function[fn (resetFlag: c_int) -> sqlite3_int64]("sqlite3_memory_highwater")(resetFlag)
+        return self.lib.get_function[fn (type_of(resetFlag)) -> sqlite3_int64]("sqlite3_memory_highwater")(resetFlag)
 
-    fn sqlite3_randomness(self, N: c_int, P: OpaquePointer) -> NoneType:
-        return self.lib.get_function[fn (N: c_int, P: OpaquePointer) -> NoneType]("sqlite3_randomness")(N, P)
+    fn sqlite3_randomness(self, N: c_int, P: OpaqueMutPointer) -> NoneType:
+        return self.lib.get_function[fn (type_of(N), type_of(P)) -> NoneType]("sqlite3_randomness")(N, P)
 
-    fn sqlite3_set_authorizer(
+    fn sqlite3_set_authorizer[origin: MutOrigin, origin2: ImmutOrigin, origin3: ImmutOrigin, origin4: ImmutOrigin, origin5: ImmutOrigin](
         self,
-        db: UnsafePointer[sqlite3_connection],
+        db: UnsafeMutPointer[sqlite3_connection],
         xAuth: fn (
-            OpaquePointer,
+            OpaqueMutPointer[origin],
             c_int,
-            UnsafePointer[c_char, mut=False],
-            UnsafePointer[c_char, mut=False],
-            UnsafePointer[c_char, mut=False],
-            UnsafePointer[c_char, mut=False],
+            UnsafeImmutPointer[c_char, origin2],
+            UnsafeImmutPointer[c_char, origin3],
+            UnsafeImmutPointer[c_char, origin4],
+            UnsafeImmutPointer[c_char, origin5],
         ) -> c_int,
-        pUserData: OpaquePointer,
+        pUserData: OpaqueMutPointer,
     ) -> c_int:
         return self.lib.get_function[
-            fn (
-                UnsafePointer[sqlite3_connection], /,
-                xAuth: fn (
-                    OpaquePointer,
-                    c_int,
-                    UnsafePointer[c_char, mut=False],
-                    UnsafePointer[c_char, mut=False],
-                    UnsafePointer[c_char, mut=False],
-                    UnsafePointer[c_char, mut=False],
-                ) -> c_int,
-                pUserData: OpaquePointer,
-            ) -> c_int
+            fn (type_of(db), type_of(xAuth), type_of(pUserData)) -> c_int
         ]("sqlite3_set_authorizer")(db, xAuth, pUserData)
 
-    fn sqlite3_trace(
+    fn sqlite3_trace[origin: MutOrigin, origin2: ImmutOrigin](
         self,
-        db: UnsafePointer[sqlite3_connection],
-        xTrace: fn (OpaquePointer, UnsafePointer[c_char, mut=False]) -> NoneType,
-        pArg: OpaquePointer,
-    ) -> OpaquePointer:
+        db: UnsafeMutPointer[sqlite3_connection],
+        xTrace: fn (OpaqueMutPointer[origin], UnsafeImmutPointer[c_char, origin2]) -> NoneType,
+        pArg: OpaqueMutPointer,
+    ) -> OpaqueMutPointer:
         return self.lib.get_function[
-            fn (
-                UnsafePointer[sqlite3_connection], /,
-                xTrace: fn (OpaquePointer, UnsafePointer[c_char, mut=False]) -> NoneType,
-                pArg: OpaquePointer,
-            ) -> OpaquePointer
+            fn (type_of(db), type_of(xTrace), type_of(pArg)) -> OpaqueMutPointer
         ]("sqlite3_trace")(db, xTrace, pArg)
 
-    fn sqlite3_profile(
+    fn sqlite3_profile[origin: MutOrigin, origin2: ImmutOrigin, origin3: MutOrigin](
         self,
-        db: UnsafePointer[sqlite3_connection],
-        xProfile: fn (OpaquePointer, UnsafePointer[c_char, mut=False], sqlite3_uint64) -> NoneType,
-        pArg: OpaquePointer,
-    ) -> OpaquePointer:
+        db: UnsafeMutPointer[sqlite3_connection],
+        xProfile: fn (OpaqueMutPointer[origin], UnsafeImmutPointer[c_char, origin2], sqlite3_uint64) -> NoneType,
+        pArg: OpaqueMutPointer[origin3],
+    ) -> OpaqueMutPointer:
         return self.lib.get_function[
-            fn (
-                UnsafePointer[sqlite3_connection], /,
-                xProfile: fn (OpaquePointer, UnsafePointer[c_char, mut=False], sqlite3_uint64) -> NoneType,
-                pArg: OpaquePointer,
-            ) -> OpaquePointer
+            fn (type_of(db), type_of(xProfile), type_of(pArg)) -> OpaqueMutPointer
         ]("sqlite3_profile")(db, xProfile, pArg)
 
-    fn sqlite3_trace_v2(
+    fn sqlite3_trace_v2[origin: MutOrigin, origin2: MutOrigin, origin3: MutOrigin](
         self,
-        db: UnsafePointer[sqlite3_connection],
-        uMask: UInt32,
-        xCallback: fn (UInt32, OpaquePointer, OpaquePointer, OpaquePointer) -> c_int,
-        pCtx: OpaquePointer,
+        db: UnsafeMutPointer[sqlite3_connection],
+        uMask: c_uint,
+        xCallback: fn (c_uint, OpaqueMutPointer[origin], OpaqueMutPointer[origin2], OpaqueMutPointer[origin3]) -> c_int,
+        pCtx: OpaqueMutPointer,
     ) -> c_int:
         return self.lib.get_function[
-            fn (
-                UnsafePointer[sqlite3_connection], /,
-                uMask: UInt32,
-                xCallback: fn (UInt32, OpaquePointer, OpaquePointer, OpaquePointer) -> c_int,
-                pCtx: OpaquePointer,
-            ) -> c_int
+            fn (type_of(db), type_of(uMask), type_of(xCallback), type_of(pCtx)) -> c_int
         ]("sqlite3_trace_v2")(db, uMask, xCallback, pCtx)
 
-    fn sqlite3_progress_handler(
+    fn sqlite3_progress_handler[origin: MutOrigin](
         self,
-        db: UnsafePointer[sqlite3_connection],
+        db: UnsafeMutPointer[sqlite3_connection],
         nOps: c_int,
-        xProgress: fn (OpaquePointer) -> c_int,
-        pArg: OpaquePointer,
+        xProgress: fn (OpaqueMutPointer[origin]) -> c_int,
+        pArg: OpaqueMutPointer,
     ) -> NoneType:
         return self.lib.get_function[
-            fn (UnsafePointer[sqlite3_connection], c_int, fn (OpaquePointer) -> c_int, OpaquePointer) -> NoneType
+            fn (type_of(db), type_of(nOps), type_of(xProgress), type_of(pArg)) -> NoneType
         ]("sqlite3_progress_handler")(db, nOps, xProgress, pArg)
 
-    fn sqlite3_open(
-        self, filename: UnsafePointer[c_char, mut=False], ppDb: UnsafePointer[UnsafePointer[sqlite3_connection]]
+    fn sqlite3_open[origin: MutOrigin](
+        self,
+        filename: UnsafeImmutPointer[c_char],
+        ppDb: UnsafeMutPointer[UnsafeMutPointer[sqlite3_connection, origin]]
     ) -> c_int:
         """Open A Database Connection.
 
@@ -897,43 +857,15 @@ struct _sqlite3(Movable):
             SQLITE_OK on success, or an error code on failure.
         """
         return self.lib.get_function[
-            fn (
-                filename: UnsafePointer[c_char, mut=False], ppDb: UnsafePointer[UnsafePointer[sqlite3_connection]]
-            ) -> c_int
+            fn (filename: type_of(filename), ppDb: type_of(ppDb)) -> c_int
         ]("sqlite3_open")(filename, ppDb)
 
-    fn sqlite3_open16(
-        self, filename: UnsafePointer[NoneType, mut=False], ppDb: UnsafePointer[UnsafePointer[sqlite3_connection]]
-    ) -> c_int:
-        """Open A Database Connection (UTF-16).
-
-        This routine opens a connection to an SQLite database file and returns
-        a database connection object to be used by other SQLite routines.
-
-        This works like sqlite3_open() except that the database filename is
-        interpreted as UTF-16 native byte order instead of UTF-8. The
-        sqlite3_open16() interface is provided for legacy compatibility.
-        New applications should use sqlite3_open_v2() instead.
-
-        Args:
-            filename: Database filename (UTF-16 encoded).
-            ppDb: OUT: SQLite db handle.
-
-        Returns:
-            SQLITE_OK on success, or an error code on failure.
-        """
-        return self.lib.get_function[
-            fn (
-                filename: UnsafePointer[NoneType, mut=False], ppDb: UnsafePointer[UnsafePointer[sqlite3_connection]]
-            ) -> c_int
-        ]("sqlite3_open16")(filename, ppDb)
-
-    fn sqlite3_open_v2(
+    fn sqlite3_open_v2[origin: MutOrigin](
         self,
-        filename: UnsafePointer[c_char, mut=False],
-        ppDb: UnsafePointer[UnsafePointer[sqlite3_connection]],
+        filename: UnsafeImmutPointer[c_char],
+        ppDb: UnsafeMutPointer[UnsafeMutPointer[sqlite3_connection, origin]],
         flags: c_int,
-        zVfs: UnsafePointer[c_char, mut=False],
+        zVfs: UnsafeImmutPointer[c_char],
     ) -> c_int:
         """Open A Database Connection with specified flags and VFS.
 
@@ -964,81 +896,78 @@ struct _sqlite3(Movable):
         """
         return self.lib.get_function[
             fn (
-                filename: UnsafePointer[c_char, mut=False],
-                ppDb: UnsafePointer[UnsafePointer[sqlite3_connection]],
-                flags: c_int,
-                zVfs: UnsafePointer[c_char, mut=False],
+                filename: type_of(filename), ppDb: type_of(ppDb), flags: type_of(flags), zVfs: type_of(zVfs),
             ) -> c_int
         ]("sqlite3_open_v2")(filename, ppDb, flags, zVfs)
 
     fn sqlite3_uri_parameter(
-        self, z: sqlite3_filename, zParam: UnsafePointer[c_char, mut=False]
-    ) -> UnsafePointer[c_char, mut=False]:
+        self, z: sqlite3_filename, zParam: UnsafeImmutPointer[c_char]
+    ) -> UnsafeImmutPointer[c_char]:
         return self.lib.get_function[
-            fn (z: sqlite3_filename, zParam: UnsafePointer[c_char, mut=False]) -> UnsafePointer[c_char, mut=False]
+            fn (type_of(z), type_of(zParam)) -> UnsafeImmutPointer[c_char]
         ]("sqlite3_uri_parameter")(z, zParam)
 
     fn sqlite3_uri_boolean(
-        self, z: sqlite3_filename, zParam: UnsafePointer[c_char, mut=False], bDefault: c_int
+        self, z: sqlite3_filename, zParam: UnsafeImmutPointer[c_char], bDefault: c_int
     ) -> c_int:
         return self.lib.get_function[
-            fn (z: sqlite3_filename, zParam: UnsafePointer[c_char, mut=False], bDefault: c_int) -> c_int
+            fn (type_of(z), type_of(zParam), type_of(bDefault)) -> c_int
         ]("sqlite3_uri_boolean")(z, zParam, bDefault)
 
     fn sqlite3_uri_int64(
-        self, z: sqlite3_filename, zParam: UnsafePointer[c_char, mut=False], dflt: sqlite3_int64
+        self, z: sqlite3_filename, zParam: UnsafeImmutPointer[c_char], dflt: sqlite3_int64
     ) -> sqlite3_int64:
         return self.lib.get_function[
-            fn (sqlite3_filename, UnsafePointer[c_char, mut=False], sqlite3_int64) -> sqlite3_int64
+            fn (type_of(z), type_of(zParam), type_of(dflt)) -> sqlite3_int64
         ]("sqlite3_uri_int64")(z, zParam, dflt)
 
-    fn sqlite3_uri_key(self, z: sqlite3_filename, N: c_int) -> UnsafePointer[c_char, mut=False]:
-        return self.lib.get_function[fn (z: sqlite3_filename, N: c_int) -> UnsafePointer[c_char, mut=False]](
+    fn sqlite3_uri_key(self, z: sqlite3_filename, N: c_int) -> UnsafeImmutPointer[c_char]:
+        return self.lib.get_function[fn (type_of(z), type_of(N)) -> UnsafeImmutPointer[c_char]](
             "sqlite3_uri_key"
         )(z, N)
 
-    fn sqlite3_filename_database(self, z: sqlite3_filename) -> UnsafePointer[c_char, mut=False]:
-        return self.lib.get_function[fn (sqlite3_filename) -> UnsafePointer[c_char, mut=False]](
+    fn sqlite3_filename_database(self, z: sqlite3_filename) -> UnsafeImmutPointer[c_char]:
+        return self.lib.get_function[fn (type_of(z)) -> UnsafeImmutPointer[c_char]](
             "sqlite3_filename_database"
         )(z)
 
-    fn sqlite3_filename_journal(self, z: sqlite3_filename) -> UnsafePointer[c_char, mut=False]:
-        return self.lib.get_function[fn (sqlite3_filename) -> UnsafePointer[c_char, mut=False]](
+    fn sqlite3_filename_journal(self, z: sqlite3_filename) -> UnsafeImmutPointer[c_char]:
+        return self.lib.get_function[fn (type_of(z)) -> UnsafeImmutPointer[c_char]](
             "sqlite3_filename_journal"
         )(z)
 
-    fn sqlite3_filename_wal(self, z: sqlite3_filename) -> UnsafePointer[c_char, mut=False]:
-        return self.lib.get_function[fn (sqlite3_filename) -> UnsafePointer[c_char, mut=False]]("sqlite3_filename_wal")(
+    fn sqlite3_filename_wal(self, z: sqlite3_filename) -> UnsafeImmutPointer[c_char]:
+        return self.lib.get_function[fn (type_of(z)) -> UnsafeImmutPointer[c_char]]("sqlite3_filename_wal")(
             z
         )
 
-    fn sqlite3_database_file_object(self, z: UnsafePointer[c_char, mut=False]) -> UnsafePointer[sqlite3_file]:
-        return self.lib.get_function[fn (UnsafePointer[c_char, mut=False]) -> UnsafePointer[sqlite3_file]](
+    fn sqlite3_database_file_object(self, z: UnsafeImmutPointer[c_char]) -> UnsafeMutPointer[sqlite3_file]:
+        return self.lib.get_function[fn (type_of(z)) -> UnsafeMutPointer[sqlite3_file]](
             "sqlite3_database_file_object"
         )(z)
 
-    fn sqlite3_create_filename(
+    fn sqlite3_create_filename[origin: ImmutOrigin](
         self,
-        zDatabase: UnsafePointer[c_char, mut=False],
-        zJournal: UnsafePointer[c_char, mut=False],
-        zWal: UnsafePointer[c_char, mut=False],
+        zDatabase: UnsafeImmutPointer[c_char],
+        zJournal: UnsafeImmutPointer[c_char],
+        zWal: UnsafeImmutPointer[c_char],
         nParam: c_int,
-        azParam: UnsafePointer[UnsafePointer[c_char, mut=False]],
+        azParam: UnsafeMutPointer[UnsafeImmutPointer[c_char, origin]],
     ) -> sqlite3_filename:
         return self.lib.get_function[
             fn (
-                zDatabase: UnsafePointer[c_char, mut=False],
-                zJournal: UnsafePointer[c_char, mut=False],
-                zWal: UnsafePointer[c_char, mut=False],
-                nParam: c_int,
-                azParam: UnsafePointer[UnsafePointer[c_char, mut=False]],
+                type_of(zDatabase),
+                type_of(zJournal),
+                type_of(zWal),
+                type_of(nParam),
+                type_of(azParam),
             ) -> sqlite3_filename
         ]("sqlite3_create_filename")(zDatabase, zJournal, zWal, nParam, azParam)
 
     fn sqlite3_free_filename(self, z: sqlite3_filename) -> NoneType:
-        return self.lib.get_function[fn (sqlite3_filename) -> NoneType]("sqlite3_free_filename")(z)
+        return self.lib.get_function[fn (type_of(z)) -> NoneType]("sqlite3_free_filename")(z)
 
-    fn sqlite3_errcode(self, db: UnsafePointer[sqlite3_connection]) -> c_int:
+    fn sqlite3_errcode(self, db: UnsafeMutPointer[sqlite3_connection]) -> c_int:
         """Retrieve the most recent error code for a database connection.
 
         This function returns the numeric result code or extended result code
@@ -1052,9 +981,9 @@ struct _sqlite3(Movable):
         Returns:
             Most recent error code (SQLITE_OK if no error).
         """
-        return self.lib.get_function[fn (db: UnsafePointer[sqlite3_connection]) -> c_int]("sqlite3_errcode")(db)
+        return self.lib.get_function[fn (type_of(db)) -> c_int]("sqlite3_errcode")(db)
 
-    fn sqlite3_extended_errcode(self, db: UnsafePointer[sqlite3_connection]) -> c_int:
+    fn sqlite3_extended_errcode(self, db: UnsafeMutPointer[sqlite3_connection]) -> c_int:
         """Retrieve the most recent extended error code for a database connection.
 
         This function returns the extended result code for the most recent
@@ -1068,11 +997,11 @@ struct _sqlite3(Movable):
         Returns:
             Most recent extended error code.
         """
-        return self.lib.get_function[fn (db: UnsafePointer[sqlite3_connection]) -> c_int]("sqlite3_extended_errcode")(
+        return self.lib.get_function[fn (type_of(db)) -> c_int]("sqlite3_extended_errcode")(
             db
         )
 
-    fn sqlite3_errmsg(self, db: UnsafePointer[sqlite3_connection]) -> UnsafePointer[c_char, mut=False]:
+    fn sqlite3_errmsg(self, db: UnsafeMutPointer[sqlite3_connection]) -> UnsafeImmutPointer[c_char]:
         """Retrieve the English-language error message for the most recent error.
 
         This function returns a pointer to a UTF-8 encoded error message
@@ -1086,30 +1015,11 @@ struct _sqlite3(Movable):
         Returns:
             Pointer to UTF-8 encoded error message string.
         """
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_connection]) -> UnsafePointer[c_char, mut=False]](
+        return self.lib.get_function[fn (type_of(db)) -> UnsafeImmutPointer[c_char]](
             "sqlite3_errmsg"
         )(db)
 
-    fn sqlite3_errmsg16(self, db: UnsafePointer[sqlite3_connection]) -> UnsafePointer[NoneType, mut=False]:
-        """Retrieve the UTF-16 encoded error message for the most recent error.
-
-        This function returns a pointer to a UTF-16 native byte order encoded
-        error message describing the most recent failed SQLite call associated
-        with a database connection. The error string persists until the next
-        SQLite call. This function is provided for legacy compatibility;
-        new applications should use sqlite3_errmsg() instead.
-
-        Args:
-            db: Database connection handle.
-
-        Returns:
-            Pointer to UTF-16 encoded error message string.
-        """
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_connection]) -> UnsafePointer[NoneType, mut=False]](
-            "sqlite3_errmsg16"
-        )(db)
-
-    fn sqlite3_errstr(self, e: c_int) -> UnsafePointer[c_char, mut=False]:
+    fn sqlite3_errstr(self, e: c_int) -> UnsafeImmutPointer[c_char]:
         """Retrieve the English-language text for a result code.
 
         This function returns a pointer to a UTF-8 encoded string that
@@ -1124,9 +1034,9 @@ struct _sqlite3(Movable):
         Returns:
             Pointer to UTF-8 encoded descriptive text for the result code.
         """
-        return self.lib.get_function[fn (c_int) -> UnsafePointer[c_char, mut=False]]("sqlite3_errstr")(e)
+        return self.lib.get_function[fn (type_of(e)) -> UnsafeImmutPointer[c_char]]("sqlite3_errstr")(e)
 
-    fn sqlite3_error_offset(self, db: UnsafePointer[sqlite3_connection]) -> c_int:
+    fn sqlite3_error_offset(self, db: UnsafeMutPointer[sqlite3_connection]) -> c_int:
         """Get byte offset of SQL error.
 
         This function returns the byte offset into the SQL text of the most
@@ -1141,9 +1051,9 @@ struct _sqlite3(Movable):
         Returns:
             Byte offset of error in SQL text, or -1 if not applicable.
         """
-        return self.lib.get_function[fn (db: UnsafePointer[sqlite3_connection]) -> c_int]("sqlite3_error_offset")(db)
+        return self.lib.get_function[fn (type_of(db)) -> c_int]("sqlite3_error_offset")(db)
 
-    fn sqlite3_limit(self, db: UnsafePointer[sqlite3_connection], id_: c_int, newVal: c_int) -> c_int:
+    fn sqlite3_limit(self, db: UnsafeMutPointer[sqlite3_connection], id: c_int, newVal: c_int) -> c_int:
         """Set or retrieve run-time limits on database connection.
 
         This function allows applications to impose limits on various
@@ -1166,23 +1076,23 @@ struct _sqlite3(Movable):
 
         Args:
             db: Database connection handle.
-            id_: Limit category identifier.
+            id: Limit category identifier.
             newVal: New limit value (-1 to query current value without changing).
 
         Returns:
             Previous limit value.
         """
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_connection], /, id_: c_int, newVal: c_int) -> c_int](
+        return self.lib.get_function[fn (type_of(db), type_of(id), type_of(newVal)) -> c_int](
             "sqlite3_limit"
-        )(db, id_, newVal)
+        )(db, id, newVal)
 
-    fn sqlite3_prepare(
+    fn sqlite3_prepare[origin: MutOrigin, origin2: ImmutOrigin](
         self,
-        db: UnsafePointer[sqlite3_connection],
-        zSql: UnsafePointer[c_char, mut=False],
+        db: UnsafeMutPointer[sqlite3_connection],
+        zSql: UnsafeImmutPointer[c_char],
         nByte: c_int,
-        ppStmt: UnsafePointer[UnsafePointer[sqlite3_stmt]],
-        pzTail: UnsafePointer[UnsafePointer[c_char, mut=False]],
+        ppStmt: UnsafeMutPointer[UnsafeMutPointer[sqlite3_stmt, origin]],
+        pzTail: UnsafeMutPointer[UnsafeImmutPointer[c_char, origin2]],
     ) -> c_int:
         """Compile an SQL statement into a prepared statement object.
 
@@ -1203,21 +1113,21 @@ struct _sqlite3(Movable):
         """
         return self.lib.get_function[
             fn (
-                db: UnsafePointer[sqlite3_connection],
-                zSql: UnsafePointer[c_char, mut=False],
-                nByte: c_int,
-                ppStmt: UnsafePointer[UnsafePointer[sqlite3_stmt]],
-                pzTail: UnsafePointer[UnsafePointer[c_char, mut=False]],
+                type_of(db),
+                type_of(zSql),
+                type_of(nByte),
+                type_of(ppStmt),
+                type_of(pzTail),
             ) -> c_int
         ]("sqlite3_prepare")(db, zSql, nByte, ppStmt, pzTail)
 
-    fn sqlite3_prepare_v2(
+    fn sqlite3_prepare_v2[origin: MutOrigin, origin2: ImmutOrigin](
         self,
-        db: UnsafePointer[sqlite3_connection],
-        zSql: UnsafePointer[c_char, mut=False],
+        db: UnsafeMutPointer[sqlite3_connection],
+        zSql: UnsafeImmutPointer[c_char],
         nByte: c_int,
-        ppStmt: UnsafePointer[UnsafePointer[sqlite3_stmt]],
-        pzTail: UnsafePointer[UnsafePointer[c_char, mut=False]],
+        ppStmt: UnsafeMutPointer[UnsafeMutPointer[sqlite3_stmt, origin]],
+        pzTail: UnsafeMutPointer[UnsafeImmutPointer[c_char, origin2]],
     ) -> c_int:
         """Compile an SQL statement into a prepared statement object (Version 2).
 
@@ -1239,91 +1149,35 @@ struct _sqlite3(Movable):
         """
         return self.lib.get_function[
             fn (
-                db: UnsafePointer[sqlite3_connection],
-                zSql: UnsafePointer[c_char, mut=False],
-                nByte: c_int,
-                ppStmt: UnsafePointer[UnsafePointer[sqlite3_stmt]],
-                pzTail: UnsafePointer[UnsafePointer[c_char, mut=False]],
+                type_of(db),
+                type_of(zSql),
+                type_of(nByte),
+                type_of(ppStmt),
+                type_of(pzTail),
             ) -> c_int
         ]("sqlite3_prepare_v2")(db, zSql, nByte, ppStmt, pzTail)
 
-    fn sqlite3_prepare_v3[sql: ImmutableOrigin, tail: MutableOrigin](
+    fn sqlite3_prepare_v3[sql: ImmutOrigin, tail: MutOrigin, origin: MutOrigin](
         self,
-        db: UnsafePointer[sqlite3_connection],
-        zSql: UnsafePointer[c_char, mut=False, origin=sql],
+        db: UnsafeMutPointer[sqlite3_connection],
+        zSql: UnsafeImmutPointer[c_char, origin=sql],
         nByte: c_int,
-        prepFlags: UInt32,
-        ppStmt: UnsafePointer[UnsafePointer[sqlite3_stmt]],
-        pzTail: UnsafePointer[UnsafePointer[c_char, mut=False, origin=sql], origin=tail],
+        prepFlags: c_uint,
+        ppStmt: UnsafeMutPointer[UnsafeMutPointer[sqlite3_stmt, origin]],
+        pzTail: UnsafeMutPointer[UnsafeImmutPointer[c_char, origin=sql], origin=tail],
     ) -> c_int:
         return self.lib.get_function[
             fn (
-                db: UnsafePointer[sqlite3_connection],
-                zSql: UnsafePointer[c_char, mut=False, origin=sql],
-                nByte: c_int,
-                prepFlags: UInt32,
-                ppStmt: UnsafePointer[UnsafePointer[sqlite3_stmt]],
-                pzTail: UnsafePointer[UnsafePointer[c_char, mut=False, origin=sql], origin=tail],
+                type_of(db),
+                type_of(zSql),
+                type_of(nByte),
+                type_of(prepFlags),
+                type_of(ppStmt),
+                type_of(pzTail),
             ) -> c_int
         ]("sqlite3_prepare_v3")(db, zSql, nByte, prepFlags, ppStmt, pzTail)
 
-    fn sqlite3_prepare16(
-        self,
-        db: UnsafePointer[sqlite3_connection],
-        zSql: UnsafePointer[NoneType, mut=False],
-        nByte: c_int,
-        ppStmt: UnsafePointer[UnsafePointer[sqlite3_stmt]],
-        pzTail: UnsafePointer[OpaquePointer, mut=False],
-    ) -> c_int:
-        return self.lib.get_function[
-            fn (
-                db: UnsafePointer[sqlite3_connection],
-                zSql: UnsafePointer[NoneType, mut=False],
-                nByte: c_int,
-                ppStmt: UnsafePointer[UnsafePointer[sqlite3_stmt]],
-                pzTail: UnsafePointer[OpaquePointer],
-            ) -> c_int
-        ]("sqlite3_prepare16")(db, zSql, nByte, ppStmt, pzTail)
-
-    fn sqlite3_prepare16_v2(
-        self,
-        db: UnsafePointer[sqlite3_connection],
-        zSql: UnsafePointer[NoneType, mut=False],
-        nByte: c_int,
-        ppStmt: UnsafePointer[UnsafePointer[sqlite3_stmt]],
-        pzTail: UnsafePointer[OpaquePointer, mut=False],
-    ) -> c_int:
-        return self.lib.get_function[
-            fn (
-                db: UnsafePointer[sqlite3_connection],
-                zSql: UnsafePointer[NoneType, mut=False],
-                nByte: c_int,
-                ppStmt: UnsafePointer[UnsafePointer[sqlite3_stmt]],
-                pzTail: UnsafePointer[OpaquePointer, mut=False],
-            ) -> c_int
-        ]("sqlite3_prepare16_v2")(db, zSql, nByte, ppStmt, pzTail)
-
-    fn sqlite3_prepare16_v3(
-        self,
-        db: UnsafePointer[sqlite3_connection],
-        zSql: UnsafePointer[NoneType, mut=False],
-        nByte: c_int,
-        prepFlags: UInt32,
-        ppStmt: UnsafePointer[UnsafePointer[sqlite3_stmt]],
-        pzTail: UnsafePointer[OpaquePointer, mut=False],
-    ) -> c_int:
-        return self.lib.get_function[
-            fn (
-                db: UnsafePointer[sqlite3_connection],
-                zSql: UnsafePointer[NoneType, mut=False],
-                nByte: c_int,
-                prepFlags: UInt32,
-                ppStmt: UnsafePointer[UnsafePointer[sqlite3_stmt]],
-                pzTail: UnsafePointer[OpaquePointer, mut=False],
-            ) -> c_int
-        ]("sqlite3_prepare16_v3")(db, zSql, nByte, prepFlags, ppStmt, pzTail)
-
-    fn sqlite3_sql(self, pStmt: UnsafePointer[sqlite3_stmt]) -> UnsafePointer[c_char, mut=False]:
+    fn sqlite3_sql(self, pStmt: UnsafeMutPointer[sqlite3_stmt]) -> UnsafeImmutPointer[c_char]:
         """Retrieve the SQL text of a prepared statement.
 
         Returns a pointer to a copy of the UTF-8 SQL text used to create the
@@ -1336,11 +1190,11 @@ struct _sqlite3(Movable):
         Returns:
             Pointer to the SQL text used to create the statement.
         """
-        return self.lib.get_function[fn (pStmt: UnsafePointer[sqlite3_stmt]) -> UnsafePointer[c_char, mut=False]](
+        return self.lib.get_function[fn (type_of(pStmt)) -> UnsafeImmutPointer[c_char]](
             "sqlite3_sql"
         )(pStmt)
 
-    fn sqlite3_expanded_sql(self, pStmt: UnsafePointer[sqlite3_stmt]) -> UnsafePointer[c_char]:
+    fn sqlite3_expanded_sql(self, pStmt: UnsafeMutPointer[sqlite3_stmt]) -> UnsafeMutPointer[c_char]:
         """Retrieve SQL with bound parameters expanded.
 
         Returns a pointer to a UTF-8 string containing the SQL text of the
@@ -1353,11 +1207,11 @@ struct _sqlite3(Movable):
         Returns:
             Pointer to the expanded SQL text, or NULL if out of memory.
         """
-        return self.lib.get_function[fn (pStmt: UnsafePointer[sqlite3_stmt]) -> UnsafePointer[c_char]](
+        return self.lib.get_function[fn (type_of(pStmt)) -> UnsafeMutPointer[c_char]](
             "sqlite3_expanded_sql"
         )(pStmt)
 
-    fn sqlite3_stmt_readonly(self, pStmt: UnsafePointer[sqlite3_stmt]) -> c_int:
+    fn sqlite3_stmt_readonly(self, pStmt: UnsafeMutPointer[sqlite3_stmt]) -> c_int:
         """Determine if a prepared statement is read-only.
 
         Returns true (non-zero) if and only if the prepared statement makes
@@ -1371,26 +1225,26 @@ struct _sqlite3(Movable):
         Returns:
             Non-zero if the statement is read-only, zero if it writes.
         """
-        return self.lib.get_function[fn (pStmt: UnsafePointer[sqlite3_stmt]) -> c_int]("sqlite3_stmt_readonly")(pStmt)
+        return self.lib.get_function[fn (type_of(pStmt)) -> c_int]("sqlite3_stmt_readonly")(pStmt)
 
-    fn sqlite3_stmt_isexplain(self, pStmt: UnsafePointer[sqlite3_stmt]) -> c_int:
-        return self.lib.get_function[fn (pStmt: UnsafePointer[sqlite3_stmt]) -> c_int]("sqlite3_stmt_isexplain")(pStmt)
+    fn sqlite3_stmt_isexplain(self, pStmt: UnsafeMutPointer[sqlite3_stmt]) -> c_int:
+        return self.lib.get_function[fn (type_of(pStmt)) -> c_int]("sqlite3_stmt_isexplain")(pStmt)
 
-    fn sqlite3_stmt_explain(self, pStmt: UnsafePointer[sqlite3_stmt], eMode: c_int) -> c_int:
-        return self.lib.get_function[fn (pStmt: UnsafePointer[sqlite3_stmt], eMode: c_int) -> c_int](
+    fn sqlite3_stmt_explain(self, pStmt: UnsafeMutPointer[sqlite3_stmt], eMode: c_int) -> c_int:
+        return self.lib.get_function[fn (type_of(pStmt), type_of(eMode)) -> c_int](
             "sqlite3_stmt_explain"
         )(pStmt, eMode)
 
-    fn sqlite3_stmt_busy(self, pStmt: UnsafePointer[sqlite3_stmt]) -> c_int:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_stmt]) -> c_int]("sqlite3_stmt_busy")(pStmt)
+    fn sqlite3_stmt_busy(self, pStmt: UnsafeMutPointer[sqlite3_stmt]) -> c_int:
+        return self.lib.get_function[fn (type_of(pStmt)) -> c_int]("sqlite3_stmt_busy")(pStmt)
 
-    fn sqlite3_bind_blob(
+    fn sqlite3_bind_blob[origin: MutOrigin](
         self,
-        pStmt: UnsafePointer[sqlite3_stmt],
+        pStmt: UnsafeMutPointer[sqlite3_stmt],
         idx: c_int,
-        value: UnsafePointer[NoneType, mut=False],
+        value: OpaqueImmutPointer,
         n: c_int,
-        destructor: fn (OpaquePointer) -> NoneType,
+        destructor: fn (OpaqueMutPointer[origin]) -> NoneType,
     ) -> c_int:
         """Binding Values To Prepared Statements - BLOB.
 
@@ -1410,33 +1264,25 @@ struct _sqlite3(Movable):
         """
         return self.lib.get_function[
             fn (
-                UnsafePointer[sqlite3_stmt],
-                c_int,
-                UnsafePointer[NoneType, mut=False], /,
-                n: c_int,
-                destructor: fn (OpaquePointer) -> NoneType,
+                type_of(pStmt), type_of(idx), type_of(value), type_of(n), type_of(destructor)
             ) -> c_int
         ]("sqlite3_bind_blob")(pStmt, idx, value, n, destructor)
 
-    fn sqlite3_bind_blob64(
+    fn sqlite3_bind_blob64[origin: MutOrigin](
         self,
-        pStmt: UnsafePointer[sqlite3_stmt],
+        pStmt: UnsafeMutPointer[sqlite3_stmt],
         idx: c_int,
-        value: UnsafePointer[NoneType, mut=False],
+        value: OpaqueImmutPointer,
         n: sqlite3_uint64,
-        destructor: fn (OpaquePointer) -> NoneType,
+        destructor: fn (OpaqueMutPointer[origin]) -> NoneType,
     ) -> c_int:
         return self.lib.get_function[
             fn (
-                UnsafePointer[sqlite3_stmt],
-                c_int,
-                UnsafePointer[NoneType, mut=False],
-                sqlite3_uint64,
-                fn (OpaquePointer) -> NoneType,
+               type_of(pStmt), type_of(idx), type_of(value), type_of(n), type_of(destructor)
             ) -> c_int
         ]("sqlite3_bind_blob64")(pStmt, idx, value, n, destructor)
 
-    fn sqlite3_bind_double(self, pStmt: UnsafePointer[sqlite3_stmt], idx: c_int, value: Float64) -> c_int:
+    fn sqlite3_bind_double(self, pStmt: UnsafeMutPointer[sqlite3_stmt], idx: c_int, value: Float64) -> c_int:
         """Binding Values To Prepared Statements - REAL.
 
         This routine binds a floating point value to a parameter in a prepared statement.
@@ -1450,21 +1296,21 @@ struct _sqlite3(Movable):
         Returns:
             SQLITE_OK on success, or an error code on failure.
         """
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_stmt], c_int, Float64) -> c_int]("sqlite3_bind_double")(
+        return self.lib.get_function[fn (type_of(pStmt), type_of(idx), type_of(value)) -> c_int]("sqlite3_bind_double")(
             pStmt, idx, value
         )
 
-    fn sqlite3_bind_int(self, pStmt: UnsafePointer[sqlite3_stmt], idx: c_int, value: c_int) -> c_int:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_stmt], c_int, c_int) -> c_int]("sqlite3_bind_int")(
+    fn sqlite3_bind_int(self, pStmt: UnsafeMutPointer[sqlite3_stmt], idx: c_int, value: c_int) -> c_int:
+        return self.lib.get_function[fn (type_of(pStmt), type_of(idx), type_of(value)) -> c_int]("sqlite3_bind_int")(
             pStmt, idx, value
         )
 
-    fn sqlite3_bind_int64(self, pStmt: UnsafePointer[sqlite3_stmt], idx: c_int, value: sqlite3_int64) -> c_int:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_stmt], c_int, sqlite3_int64) -> c_int](
+    fn sqlite3_bind_int64(self, pStmt: UnsafeMutPointer[sqlite3_stmt], idx: c_int, value: sqlite3_int64) -> c_int:
+        return self.lib.get_function[fn (type_of(pStmt), type_of(idx), type_of(value)) -> c_int](
             "sqlite3_bind_int64"
         )(pStmt, idx, value)
 
-    fn sqlite3_bind_null(self, pStmt: UnsafePointer[sqlite3_stmt], idx: c_int) -> c_int:
+    fn sqlite3_bind_null(self, pStmt: UnsafeMutPointer[sqlite3_stmt], idx: c_int) -> c_int:
         """Binding Values To Prepared Statements - NULL.
 
         This routine binds a NULL value to a parameter in a prepared statement.
@@ -1477,100 +1323,78 @@ struct _sqlite3(Movable):
         Returns:
             SQLITE_OK on success, or an error code on failure.
         """
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_stmt], c_int) -> c_int]("sqlite3_bind_null")(pStmt, idx)
+        return self.lib.get_function[fn (type_of(pStmt), type_of(idx)) -> c_int]("sqlite3_bind_null")(pStmt, idx)
 
     fn sqlite3_bind_text(
         self,
-        pStmt: UnsafePointer[sqlite3_stmt],
+        pStmt: UnsafeMutPointer[sqlite3_stmt],
         idx: c_int,
-        value: UnsafePointer[c_char, mut=False],
+        value: UnsafeImmutPointer[c_char],
         n: c_int,
         destructor: sqlite3_destructor_type,
     ) -> c_int:
         return self.lib.get_function[
             fn (
-                UnsafePointer[sqlite3_stmt],
-                c_int,
-                UnsafePointer[c_char, mut=False],
-                c_int,
-                sqlite3_destructor_type,
+                type_of(pStmt), type_of(idx), type_of(value), type_of(n), type_of(destructor)
             ) -> c_int
         ]("sqlite3_bind_text")(pStmt, idx, value, n, destructor)
 
-    fn sqlite3_bind_text16(
+    fn sqlite3_bind_text64[origin: MutOrigin](
         self,
-        pStmt: UnsafePointer[sqlite3_stmt],
+        pStmt: UnsafeMutPointer[sqlite3_stmt],
         idx: c_int,
-        value: UnsafePointer[NoneType, mut=False],
-        n: c_int,
-        destructor: fn (OpaquePointer) -> NoneType,
-    ) -> c_int:
-        return self.lib.get_function[
-            fn (
-                UnsafePointer[sqlite3_stmt],
-                c_int,
-                UnsafePointer[NoneType, mut=False],
-                c_int,
-                fn (OpaquePointer) -> NoneType,
-            ) -> c_int
-        ]("sqlite3_bind_text16")(pStmt, idx, value, n, destructor)
-
-    fn sqlite3_bind_text64(
-        self,
-        pStmt: UnsafePointer[sqlite3_stmt],
-        idx: c_int,
-        value: UnsafePointer[c_char, mut=False],
+        value: UnsafeImmutPointer[c_char],
         n: sqlite3_uint64,
-        destructor: fn (OpaquePointer) -> NoneType,
-        encoding: UInt8,
+        destructor: fn (OpaqueMutPointer[origin]) -> NoneType,
+        encoding: c_uchar,
     ) -> c_int:
         return self.lib.get_function[
             fn (
-                UnsafePointer[sqlite3_stmt],
-                c_int,
-                UnsafePointer[c_char, mut=False],
-                sqlite3_uint64,
-                fn (OpaquePointer) -> NoneType, /,
-                encoding: UInt8,
+                type_of(pStmt),
+                type_of(idx),
+                type_of(value),
+                type_of(n),
+                type_of(destructor),
+                type_of(encoding),
             ) -> c_int
         ]("sqlite3_bind_text64")(pStmt, idx, value, n, destructor, encoding)
 
     fn sqlite3_bind_value(
-        self, pStmt: UnsafePointer[sqlite3_stmt], idx: c_int, value: UnsafePointer[sqlite3_value, mut=False]
+        self, pStmt: UnsafeMutPointer[sqlite3_stmt], idx: c_int, value: UnsafeImmutPointer[sqlite3_value]
     ) -> c_int:
         return self.lib.get_function[
-            fn (UnsafePointer[sqlite3_stmt], c_int, UnsafePointer[sqlite3_value, mut=False]) -> c_int
+            fn (type_of(pStmt), type_of(idx), type_of(value)) -> c_int
         ]("sqlite3_bind_value")(pStmt, idx, value)
 
-    fn sqlite3_bind_pointer(
+    fn sqlite3_bind_pointer[origin: MutOrigin](
         self,
-        pStmt: UnsafePointer[sqlite3_stmt],
+        pStmt: UnsafeMutPointer[sqlite3_stmt],
         idx: c_int,
-        value: OpaquePointer,
-        typeStr: UnsafePointer[c_char, mut=False],
-        destructor: fn (OpaquePointer) -> NoneType,
+        value: OpaqueMutPointer,
+        typeStr: UnsafeImmutPointer[c_char],
+        destructor: fn (OpaqueMutPointer[origin]) -> NoneType,
     ) -> c_int:
         return self.lib.get_function[
             fn (
-                UnsafePointer[sqlite3_stmt],
-                c_int,
-                OpaquePointer,
-                UnsafePointer[c_char, mut=False],
-                fn (OpaquePointer) -> NoneType,
+                type_of(pStmt),
+                type_of(idx),
+                type_of(value),
+                type_of(typeStr),
+                type_of(destructor),
             ) -> c_int
         ]("sqlite3_bind_pointer")(pStmt, idx, value, typeStr, destructor)
 
-    fn sqlite3_bind_zeroblob(self, pStmt: UnsafePointer[sqlite3_stmt], idx: c_int, n: c_int) -> c_int:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_stmt], c_int, /, n: c_int) -> c_int](
+    fn sqlite3_bind_zeroblob(self, pStmt: UnsafeMutPointer[sqlite3_stmt], idx: c_int, n: c_int) -> c_int:
+        return self.lib.get_function[fn (type_of(pStmt), type_of(idx), type_of(n)) -> c_int](
             "sqlite3_bind_zeroblob"
         )(pStmt, idx, n)
 
-    fn sqlite3_bind_zeroblob64(self, pStmt: UnsafePointer[sqlite3_stmt], idx: c_int, n: sqlite3_uint64) -> c_int:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_stmt], c_int, sqlite3_uint64) -> c_int](
+    fn sqlite3_bind_zeroblob64(self, pStmt: UnsafeMutPointer[sqlite3_stmt], idx: c_int, n: sqlite3_uint64) -> c_int:
+        return self.lib.get_function[fn (type_of(pStmt), type_of(idx), type_of(n)) -> c_int](
             "sqlite3_bind_zeroblob64"
         )(pStmt, idx, n)
 
-    fn sqlite3_bind_parameter_count(self, pStmt: UnsafePointer[sqlite3_stmt]) -> c_int:
+    fn sqlite3_bind_parameter_count(self, pStmt: UnsafeMutPointer[sqlite3_stmt]) -> c_int:
         """Return the number of parameters in a prepared statement.
 
         This function returns the number of SQL parameters in the prepared
@@ -1583,23 +1407,23 @@ struct _sqlite3(Movable):
         Returns:
             The number of SQL parameters in the prepared statement.
         """
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_stmt]) -> c_int]("sqlite3_bind_parameter_count")(pStmt)
+        return self.lib.get_function[fn (type_of(pStmt)) -> c_int]("sqlite3_bind_parameter_count")(pStmt)
 
     fn sqlite3_bind_parameter_name(
-        self, pStmt: UnsafePointer[sqlite3_stmt], idx: c_int
-    ) -> UnsafePointer[c_char, mut=False]:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_stmt], c_int) -> UnsafePointer[c_char, mut=False]](
+        self, pStmt: UnsafeMutPointer[sqlite3_stmt], idx: c_int
+    ) -> UnsafeImmutPointer[c_char]:
+        return self.lib.get_function[fn (type_of(pStmt), type_of(idx)) -> UnsafeImmutPointer[c_char]](
             "sqlite3_bind_parameter_name"
         )(pStmt, idx)
 
     fn sqlite3_bind_parameter_index(
-        self, pStmt: UnsafePointer[sqlite3_stmt], zName: UnsafePointer[c_char, mut=False]
+        self, pStmt: UnsafeMutPointer[sqlite3_stmt], zName: UnsafeImmutPointer[c_char]
     ) -> c_int:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_stmt], UnsafePointer[c_char, mut=False]) -> c_int](
+        return self.lib.get_function[fn (type_of(pStmt), type_of(zName)) -> c_int](
             "sqlite3_bind_parameter_index"
         )(pStmt, zName)
 
-    fn sqlite3_clear_bindings(self, pStmt: UnsafePointer[sqlite3_stmt]) -> c_int:
+    fn sqlite3_clear_bindings(self, pStmt: UnsafeMutPointer[sqlite3_stmt]) -> c_int:
         """Reset All Bindings On A Prepared Statement.
 
         Contrary to the intuition of many, sqlite3_reset() does not reset
@@ -1612,9 +1436,9 @@ struct _sqlite3(Movable):
         Returns:
             SQLITE_OK on success, or an error code on failure.
         """
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_stmt]) -> c_int]("sqlite3_clear_bindings")(pStmt)
+        return self.lib.get_function[fn (type_of(pStmt)) -> c_int]("sqlite3_clear_bindings")(pStmt)
 
-    fn sqlite3_column_count(self, pStmt: UnsafePointer[sqlite3_stmt]) -> c_int:
+    fn sqlite3_column_count(self, pStmt: UnsafeMutPointer[sqlite3_stmt]) -> c_int:
         """Return the number of columns in a result set.
 
         This function returns the number of columns in the result set returned
@@ -1627,75 +1451,42 @@ struct _sqlite3(Movable):
         Returns:
             The number of columns in the result set.
         """
-        return self.lib.get_function[fn (pStmt: UnsafePointer[sqlite3_stmt]) -> c_int]("sqlite3_column_count")(pStmt)
+        return self.lib.get_function[fn (type_of(pStmt)) -> c_int]("sqlite3_column_count")(pStmt)
 
-    fn sqlite3_column_name(self, pStmt: UnsafePointer[sqlite3_stmt], N: c_int) -> UnsafePointer[c_char, mut=False]:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_stmt], /, N: c_int) -> UnsafePointer[c_char, mut=False]](
+    fn sqlite3_column_name(self, pStmt: UnsafeMutPointer[sqlite3_stmt], N: c_int) -> UnsafeImmutPointer[c_char]:
+        return self.lib.get_function[fn (type_of(pStmt), type_of(N)) -> UnsafeImmutPointer[c_char]](
             "sqlite3_column_name"
         )(pStmt, N)
 
-    fn sqlite3_column_name16(self, pStmt: UnsafePointer[sqlite3_stmt], N: c_int) -> UnsafePointer[NoneType, mut=False]:
-        return self.lib.get_function[
-            fn (UnsafePointer[sqlite3_stmt], /, N: c_int) -> UnsafePointer[NoneType, mut=False]
-        ]("sqlite3_column_name16")(pStmt, N)
-
     fn sqlite3_column_database_name(
-        self, pStmt: UnsafePointer[sqlite3_stmt], idx: c_int
-    ) -> UnsafePointer[c_char, mut=False]:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_stmt], c_int) -> UnsafePointer[c_char, mut=False]](
+        self, pStmt: UnsafeMutPointer[sqlite3_stmt], idx: c_int
+    ) -> UnsafeImmutPointer[c_char]:
+        return self.lib.get_function[fn (type_of(pStmt), type_of(idx)) -> UnsafeImmutPointer[c_char]](
             "sqlite3_column_database_name"
         )(pStmt, idx)
 
-    fn sqlite3_column_database_name16(
-        self, pStmt: UnsafePointer[sqlite3_stmt], idx: c_int
-    ) -> UnsafePointer[NoneType, mut=False]:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_stmt], c_int) -> UnsafePointer[NoneType, mut=False]](
-            "sqlite3_column_database_name16"
-        )(pStmt, idx)
-
     fn sqlite3_column_table_name(
-        self, pStmt: UnsafePointer[sqlite3_stmt], idx: c_int
-    ) -> UnsafePointer[c_char, mut=False]:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_stmt], c_int) -> UnsafePointer[c_char, mut=False]](
+        self, pStmt: UnsafeMutPointer[sqlite3_stmt], idx: c_int
+    ) -> UnsafeImmutPointer[c_char]:
+        return self.lib.get_function[fn (type_of(pStmt), type_of(idx)) -> UnsafeImmutPointer[c_char]](
             "sqlite3_column_table_name"
         )(pStmt, idx)
 
-    fn sqlite3_column_table_name16(
-        self, pStmt: UnsafePointer[sqlite3_stmt], idx: c_int
-    ) -> UnsafePointer[NoneType, mut=False]:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_stmt], c_int) -> UnsafePointer[NoneType, mut=False]](
-            "sqlite3_column_table_name16"
-        )(pStmt, idx)
-
     fn sqlite3_column_origin_name(
-        self, pStmt: UnsafePointer[sqlite3_stmt], idx: c_int
-    ) -> UnsafePointer[c_char, mut=False]:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_stmt], c_int) -> UnsafePointer[c_char, mut=False]](
+        self, pStmt: UnsafeMutPointer[sqlite3_stmt], idx: c_int
+    ) -> UnsafeImmutPointer[c_char]:
+        return self.lib.get_function[fn (type_of(pStmt), type_of(idx)) -> UnsafeImmutPointer[c_char]](
             "sqlite3_column_origin_name"
         )(pStmt, idx)
 
-    fn sqlite3_column_origin_name16(
-        self, pStmt: UnsafePointer[sqlite3_stmt], idx: c_int
-    ) -> UnsafePointer[NoneType, mut=False]:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_stmt], c_int) -> UnsafePointer[NoneType, mut=False]](
-            "sqlite3_column_origin_name16"
-        )(pStmt, idx)
-
     fn sqlite3_column_decltype(
-        self, pStmt: UnsafePointer[sqlite3_stmt], idx: c_int
-    ) -> UnsafePointer[c_char, mut=False]:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_stmt], c_int) -> UnsafePointer[c_char, mut=False]](
+        self, pStmt: UnsafeMutPointer[sqlite3_stmt], idx: c_int
+    ) -> UnsafeImmutPointer[c_char]:
+        return self.lib.get_function[fn (type_of(pStmt), type_of(idx)) -> UnsafeImmutPointer[c_char]](
             "sqlite3_column_decltype"
         )(pStmt, idx)
 
-    fn sqlite3_column_decltype16(
-        self, pStmt: UnsafePointer[sqlite3_stmt], idx: c_int
-    ) -> UnsafePointer[NoneType, mut=False]:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_stmt], c_int) -> UnsafePointer[NoneType, mut=False]](
-            "sqlite3_column_decltype16"
-        )(pStmt, idx)
-
-    fn sqlite3_step(self, pStmt: UnsafePointer[sqlite3_stmt]) -> c_int:
+    fn sqlite3_step(self, pStmt: UnsafeMutPointer[sqlite3_stmt]) -> c_int:
         """Execute a prepared statement.
 
         This function is used to evaluate a prepared statement that has been
@@ -1713,9 +1504,9 @@ struct _sqlite3(Movable):
             SQLITE_ROW if a row is ready, SQLITE_DONE if execution is complete,
             or an error code if an error occurred.
         """
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_stmt]) -> c_int]("sqlite3_step")(pStmt)
+        return self.lib.get_function[fn (type_of(pStmt)) -> c_int]("sqlite3_step")(pStmt)
 
-    fn sqlite3_data_count(self, pStmt: UnsafePointer[sqlite3_stmt]) -> c_int:
+    fn sqlite3_data_count(self, pStmt: UnsafeMutPointer[sqlite3_stmt]) -> c_int:
         """Number Of Columns In A Result Set.
 
         The sqlite3_data_count() routine returns the number of columns in the
@@ -1729,9 +1520,9 @@ struct _sqlite3(Movable):
         Returns:
             Number of columns in the current row, or 0 if no current row.
         """
-        return self.lib.get_function[fn (pStmt: UnsafePointer[sqlite3_stmt]) -> c_int]("sqlite3_data_count")(pStmt)
+        return self.lib.get_function[fn (type_of(pStmt)) -> c_int]("sqlite3_data_count")(pStmt)
 
-    fn sqlite3_column_blob(self, pStmt: UnsafePointer[sqlite3_stmt], iCol: c_int) -> OpaquePointer:
+    fn sqlite3_column_blob(self, pStmt: UnsafeMutPointer[sqlite3_stmt], iCol: c_int) -> OpaqueMutPointer:
         """Result Values From A Query - BLOB.
 
         These routines return information about a single column of the current
@@ -1745,11 +1536,11 @@ struct _sqlite3(Movable):
         Returns:
             Pointer to the BLOB data, or NULL if the column is NULL.
         """
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_stmt], /, iCol: c_int) -> OpaquePointer](
+        return self.lib.get_function[fn (type_of(pStmt), type_of(iCol)) -> OpaqueMutPointer](
             "sqlite3_column_blob"
         )(pStmt, iCol)
 
-    fn sqlite3_column_double(self, pStmt: UnsafePointer[sqlite3_stmt], iCol: c_int) -> Float64:
+    fn sqlite3_column_double(self, pStmt: UnsafeMutPointer[sqlite3_stmt], iCol: c_int) -> Float64:
         """Result Values From A Query - REAL.
 
         This routine returns the value of the specified column as a floating
@@ -1763,11 +1554,11 @@ struct _sqlite3(Movable):
         Returns:
             The column value as a double precision floating point number.
         """
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_stmt], /, iCol: c_int) -> Float64](
+        return self.lib.get_function[fn (type_of(pStmt), type_of(iCol)) -> Float64](
             "sqlite3_column_double"
         )(pStmt, iCol)
 
-    fn sqlite3_column_int(self, pStmt: UnsafePointer[sqlite3_stmt], iCol: c_int) -> c_int:
+    fn sqlite3_column_int(self, pStmt: UnsafeMutPointer[sqlite3_stmt], iCol: c_int) -> c_int:
         """Result Values From A Query - INTEGER.
 
         This routine returns the value of the specified column as a 32-bit
@@ -1781,16 +1572,16 @@ struct _sqlite3(Movable):
         Returns:
             The column value as a 32-bit signed integer.
         """
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_stmt], /, iCol: c_int) -> c_int]("sqlite3_column_int")(
+        return self.lib.get_function[fn (type_of(pStmt), type_of(iCol)) -> c_int]("sqlite3_column_int")(
             pStmt, iCol
         )
 
-    fn sqlite3_column_int64(self, pStmt: UnsafePointer[sqlite3_stmt], iCol: c_int) -> sqlite3_int64:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_stmt], /, iCol: c_int) -> sqlite3_int64](
+    fn sqlite3_column_int64(self, pStmt: UnsafeMutPointer[sqlite3_stmt], iCol: c_int) -> sqlite3_int64:
+        return self.lib.get_function[fn (type_of(pStmt), type_of(iCol)) -> sqlite3_int64](
             "sqlite3_column_int64"
         )(pStmt, iCol)
 
-    fn sqlite3_column_text(self, pStmt: UnsafePointer[sqlite3_stmt], iCol: c_int) -> UnsafePointer[UInt8]:
+    fn sqlite3_column_text(self, pStmt: UnsafeMutPointer[sqlite3_stmt], iCol: c_int) -> UnsafeMutPointer[c_uchar]:
         """Retrieve column data as UTF-8 text.
 
         This function returns the value of the specified column as a UTF-8
@@ -1804,36 +1595,26 @@ struct _sqlite3(Movable):
         Returns:
             Pointer to the UTF-8 encoded text value of the column.
         """
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_stmt], /, iCol: c_int) -> UnsafePointer[UInt8]](
+        return self.lib.get_function[fn (type_of(pStmt), type_of(iCol)) -> UnsafeMutPointer[c_uchar]](
             "sqlite3_column_text"
         )(pStmt, iCol)
 
-    fn sqlite3_column_text16(self, pStmt: UnsafePointer[sqlite3_stmt], iCol: c_int) -> OpaquePointer:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_stmt], /, iCol: c_int) -> OpaquePointer](
-            "sqlite3_column_text16"
-        )(pStmt, iCol)
-
-    fn sqlite3_column_value(self, pStmt: UnsafePointer[sqlite3_stmt], iCol: c_int) -> UnsafePointer[sqlite3_value]:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_stmt], /, iCol: c_int) -> UnsafePointer[sqlite3_value]](
+    fn sqlite3_column_value(self, pStmt: UnsafeMutPointer[sqlite3_stmt], iCol: c_int) -> UnsafeMutPointer[sqlite3_value]:
+        return self.lib.get_function[fn (type_of(pStmt), type_of(iCol)) -> UnsafeMutPointer[sqlite3_value]](
             "sqlite3_column_value"
         )(pStmt, iCol)
 
-    fn sqlite3_column_bytes(self, pStmt: UnsafePointer[sqlite3_stmt], iCol: c_int) -> c_int:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_stmt], /, iCol: c_int) -> c_int]("sqlite3_column_bytes")(
+    fn sqlite3_column_bytes(self, pStmt: UnsafeMutPointer[sqlite3_stmt], iCol: c_int) -> c_int:
+        return self.lib.get_function[fn (type_of(pStmt), type_of(iCol)) -> c_int]("sqlite3_column_bytes")(
             pStmt, iCol
         )
 
-    fn sqlite3_column_bytes16(self, pStmt: UnsafePointer[sqlite3_stmt], iCol: c_int) -> c_int:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_stmt], /, iCol: c_int) -> c_int](
-            "sqlite3_column_bytes16"
-        )(pStmt, iCol)
-
-    fn sqlite3_column_type(self, pStmt: UnsafePointer[sqlite3_stmt], iCol: c_int) -> c_int:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_stmt], /, iCol: c_int) -> c_int]("sqlite3_column_type")(
+    fn sqlite3_column_type(self, pStmt: UnsafeMutPointer[sqlite3_stmt], iCol: c_int) -> c_int:
+        return self.lib.get_function[fn (type_of(pStmt), type_of(iCol)) -> c_int]("sqlite3_column_type")(
             pStmt, iCol
         )
 
-    fn sqlite3_finalize(self, pStmt: UnsafePointer[sqlite3_stmt]) -> c_int:
+    fn sqlite3_finalize(self, pStmt: UnsafeMutPointer[sqlite3_stmt]) -> c_int:
         """Finalize a prepared statement.
 
         This function is used to delete a prepared statement. If the most recent
@@ -1847,9 +1628,9 @@ struct _sqlite3(Movable):
         Returns:
             SQLITE_OK on success, or an error code if the statement failed.
         """
-        return self.lib.get_function[fn (pStmt: UnsafePointer[sqlite3_stmt]) -> c_int]("sqlite3_finalize")(pStmt)
+        return self.lib.get_function[fn (type_of(pStmt)) -> c_int]("sqlite3_finalize")(pStmt)
 
-    fn sqlite3_reset(self, pStmt: UnsafePointer[sqlite3_stmt]) -> c_int:
+    fn sqlite3_reset(self, pStmt: UnsafeMutPointer[sqlite3_stmt]) -> c_int:
         """Reset a prepared statement.
 
         This function resets a prepared statement back to its initial state,
@@ -1864,138 +1645,98 @@ struct _sqlite3(Movable):
             SQLITE_OK on success, or an error code if an error occurred during
             the most recent evaluation of the statement.
         """
-        return self.lib.get_function[fn (pStmt: UnsafePointer[sqlite3_stmt]) -> c_int]("sqlite3_reset")(pStmt)
+        return self.lib.get_function[fn (type_of(pStmt)) -> c_int]("sqlite3_reset")(pStmt)
 
-    fn sqlite3_create_function(
+    fn sqlite3_create_function[origin: MutOrigin, origin2: MutOrigin, origin3: MutOrigin, origin4: MutOrigin, origin5: MutOrigin, origin6: MutOrigin, origin7: MutOrigin](
         self,
-        db: UnsafePointer[sqlite3_connection],
-        zFunctionName: UnsafePointer[c_char, mut=False],
+        db: UnsafeMutPointer[sqlite3_connection],
+        zFunctionName: UnsafeImmutPointer[c_char],
         nArg: c_int,
         eTextRep: c_int,
-        pApp: OpaquePointer,
-        xFunc: fn (UnsafePointer[sqlite3_context], c_int, UnsafePointer[UnsafePointer[sqlite3_value]]) -> NoneType,
-        xStep: fn (UnsafePointer[sqlite3_context], c_int, UnsafePointer[UnsafePointer[sqlite3_value]]) -> NoneType,
-        xFinal: fn (UnsafePointer[sqlite3_context]) -> NoneType,
+        pApp: OpaqueMutPointer,
+        xFunc: fn (UnsafeMutPointer[sqlite3_context, origin], c_int, UnsafeMutPointer[UnsafeMutPointer[sqlite3_value, origin2], origin3]) -> NoneType,
+        xStep: fn (UnsafeMutPointer[sqlite3_context, origin4], c_int, UnsafeMutPointer[UnsafeMutPointer[sqlite3_value, origin5], origin6]) -> NoneType,
+        xFinal: fn (UnsafeMutPointer[sqlite3_context, origin6]) -> NoneType,
     ) -> c_int:
         return self.lib.get_function[
             fn (
-                db: UnsafePointer[sqlite3_connection],
-                zFunctionName: UnsafePointer[c_char, mut=False],
-                nArg: c_int,
-                eTextRep: c_int,
-                pApp: OpaquePointer,
-                xFunc: fn (
-                    UnsafePointer[sqlite3_context], c_int, UnsafePointer[UnsafePointer[sqlite3_value]]
-                ) -> NoneType,
-                xStep: fn (
-                    UnsafePointer[sqlite3_context], c_int, UnsafePointer[UnsafePointer[sqlite3_value]]
-                ) -> NoneType,
-                xFinal: fn (UnsafePointer[sqlite3_context]) -> NoneType,
+                type_of(db),
+                type_of(zFunctionName),
+                type_of(nArg),
+                type_of(eTextRep),
+                type_of(pApp),
+                type_of(xFunc),
+                type_of(xStep),
+                type_of(xFinal),
             ) -> c_int
         ]("sqlite3_create_function")(db, zFunctionName, nArg, eTextRep, pApp, xFunc, xStep, xFinal)
 
-    fn sqlite3_create_function16(
+    fn sqlite3_create_function_v2[origin: MutOrigin, origin2: MutOrigin, origin3: MutOrigin, origin4: MutOrigin, origin5: MutOrigin, origin6: MutOrigin, origin7: MutOrigin, origin8: MutOrigin](
         self,
-        db: UnsafePointer[sqlite3_connection],
-        zFunctionName: UnsafePointer[c_char, mut=False],
+        db: UnsafeMutPointer[sqlite3_connection],
+        zFunctionName: UnsafeImmutPointer[c_char],
         nArg: c_int,
         eTextRep: c_int,
-        pApp: OpaquePointer,
-        xFunc: fn (UnsafePointer[sqlite3_context], c_int, UnsafePointer[UnsafePointer[sqlite3_value]]) -> NoneType,
-        xStep: fn (UnsafePointer[sqlite3_context], c_int, UnsafePointer[UnsafePointer[sqlite3_value]]) -> NoneType,
-        xFinal: fn (UnsafePointer[sqlite3_context]) -> NoneType,
+        pApp: OpaqueMutPointer,
+        xFunc: fn (UnsafeMutPointer[sqlite3_context, origin], c_int, UnsafeMutPointer[UnsafeMutPointer[sqlite3_value, origin2], origin3]) -> NoneType,
+        xStep: fn (UnsafeMutPointer[sqlite3_context, origin4], c_int, UnsafeMutPointer[UnsafeMutPointer[sqlite3_value, origin5], origin6]) -> NoneType,
+        xFinal: fn (UnsafeMutPointer[sqlite3_context, origin7]) -> NoneType,
+        xDestroy: fn (OpaqueMutPointer[origin8]) -> NoneType,
     ) -> c_int:
         return self.lib.get_function[
             fn (
-                db: UnsafePointer[sqlite3_connection],
-                zFunctionName: UnsafePointer[c_char, mut=False],
-                nArg: c_int,
-                eTextRep: c_int,
-                pApp: OpaquePointer,
-                xFunc: fn (
-                    UnsafePointer[sqlite3_context], c_int, UnsafePointer[UnsafePointer[sqlite3_value]]
-                ) -> NoneType,
-                xStep: fn (
-                    UnsafePointer[sqlite3_context], c_int, UnsafePointer[UnsafePointer[sqlite3_value]]
-                ) -> NoneType,
-                xFinal: fn (UnsafePointer[sqlite3_context]) -> NoneType,
-            ) -> c_int
-        ]("sqlite3_create_function16")(db, zFunctionName, nArg, eTextRep, pApp, xFunc, xStep, xFinal)
-
-    fn sqlite3_create_function_v2(
-        self,
-        db: UnsafePointer[sqlite3_connection],
-        zFunctionName: UnsafePointer[c_char, mut=False],
-        nArg: c_int,
-        eTextRep: c_int,
-        pApp: OpaquePointer,
-        xFunc: fn (UnsafePointer[sqlite3_context], c_int, UnsafePointer[UnsafePointer[sqlite3_value]]) -> NoneType,
-        xStep: fn (UnsafePointer[sqlite3_context], c_int, UnsafePointer[UnsafePointer[sqlite3_value]]) -> NoneType,
-        xFinal: fn (UnsafePointer[sqlite3_context]) -> NoneType,
-        xDestroy: fn (OpaquePointer) -> NoneType,
-    ) -> c_int:
-        return self.lib.get_function[
-            fn (
-                db: UnsafePointer[sqlite3_connection],
-                zFunctionName: UnsafePointer[c_char, mut=False],
-                nArg: c_int,
-                eTextRep: c_int,
-                pApp: OpaquePointer,
-                xFunc: fn (
-                    UnsafePointer[sqlite3_context], c_int, UnsafePointer[UnsafePointer[sqlite3_value]]
-                ) -> NoneType,
-                xStep: fn (
-                    UnsafePointer[sqlite3_context], c_int, UnsafePointer[UnsafePointer[sqlite3_value]]
-                ) -> NoneType,
-                xFinal: fn (UnsafePointer[sqlite3_context]) -> NoneType,
-                xDestroy: fn (OpaquePointer) -> NoneType,
+                type_of(db),
+                type_of(zFunctionName),
+                type_of(nArg),
+                type_of(eTextRep),
+                type_of(pApp),
+                type_of(xFunc),
+                type_of(xStep),
+                type_of(xFinal),
+                type_of(xDestroy),
             ) -> c_int
         ]("sqlite3_create_function_v2")(db, zFunctionName, nArg, eTextRep, pApp, xFunc, xStep, xFinal, xDestroy)
 
-    fn sqlite3_create_window_function(
+    fn sqlite3_create_window_function[origin: MutOrigin, origin2: MutOrigin, origin3: MutOrigin, origin4: MutOrigin, origin5: MutOrigin, origin6: MutOrigin, origin7: MutOrigin, origin8: MutOrigin](
         self,
-        db: UnsafePointer[sqlite3_connection],
-        zFunctionName: UnsafePointer[c_char, mut=False],
+        db: UnsafeMutPointer[sqlite3_connection],
+        zFunctionName: UnsafeImmutPointer[c_char],
         nArg: c_int,
         eTextRep: c_int,
-        pApp: OpaquePointer,
-        xStep: fn (UnsafePointer[sqlite3_context], c_int, UnsafePointer[UnsafePointer[sqlite3_value]]) -> NoneType,
-        xFinal: fn (UnsafePointer[sqlite3_context]) -> NoneType,
-        xValue: fn (UnsafePointer[sqlite3_context]) -> NoneType,
-        xInverse: fn (UnsafePointer[sqlite3_context], c_int, UnsafePointer[UnsafePointer[sqlite3_value]]) -> NoneType,
-        xDestroy: fn (OpaquePointer) -> NoneType,
+        pApp: OpaqueMutPointer,
+        xStep: fn (UnsafeMutPointer[sqlite3_context, origin], c_int, UnsafeMutPointer[UnsafeMutPointer[sqlite3_value, origin2], origin3]) -> NoneType,
+        xFinal: fn (UnsafeMutPointer[sqlite3_context, origin4]) -> NoneType,
+        xValue: fn (UnsafeMutPointer[sqlite3_context, origin5]) -> NoneType,
+        xInverse: fn (UnsafeMutPointer[sqlite3_context, origin6], c_int, UnsafeMutPointer[UnsafeMutPointer[sqlite3_value, origin7], origin8]) -> NoneType,
+        xDestroy: fn (OpaqueMutPointer[origin8]) -> NoneType,
     ) -> c_int:
         return self.lib.get_function[
             fn (
-                db: UnsafePointer[sqlite3_connection],
-                zFunctionName: UnsafePointer[c_char, mut=False],
-                nArg: c_int,
-                eTextRep: c_int,
-                pApp: OpaquePointer,
-                xStep: fn (
-                    UnsafePointer[sqlite3_context], c_int, UnsafePointer[UnsafePointer[sqlite3_value]]
-                ) -> NoneType,
-                xFinal: fn (UnsafePointer[sqlite3_context]) -> NoneType,
-                xValue: fn (UnsafePointer[sqlite3_context]) -> NoneType,
-                xInverse: fn (
-                    UnsafePointer[sqlite3_context], c_int, UnsafePointer[UnsafePointer[sqlite3_value]]
-                ) -> NoneType,
-                xDestroy: fn (OpaquePointer) -> NoneType,
+                type_of(db),
+                type_of(zFunctionName),
+                type_of(nArg),
+                type_of(eTextRep),
+                type_of(pApp),
+                type_of(xStep),
+                type_of(xFinal),
+                type_of(xValue),
+                type_of(xInverse),
+                type_of(xDestroy),
             ) -> c_int
         ]("sqlite3_create_window_function")(
             db, zFunctionName, nArg, eTextRep, pApp, xStep, xFinal, xValue, xInverse, xDestroy
         )
 
-    fn sqlite3_aggregate_count(self, ctx: UnsafePointer[sqlite3_context]) -> c_int:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_context]) -> c_int]("sqlite3_aggregate_count")(ctx)
+    fn sqlite3_aggregate_count(self, ctx: UnsafeMutPointer[sqlite3_context]) -> c_int:
+        return self.lib.get_function[fn (type_of(ctx)) -> c_int]("sqlite3_aggregate_count")(ctx)
 
-    fn sqlite3_expired(self, pStmt: UnsafePointer[sqlite3_stmt]) -> c_int:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_stmt]) -> c_int]("sqlite3_expired")(pStmt)
+    fn sqlite3_expired(self, pStmt: UnsafeMutPointer[sqlite3_stmt]) -> c_int:
+        return self.lib.get_function[fn (type_of(pStmt)) -> c_int]("sqlite3_expired")(pStmt)
 
     fn sqlite3_transfer_bindings(
-        self, fromStmt: UnsafePointer[sqlite3_stmt], toStmt: UnsafePointer[sqlite3_stmt]
+        self, fromStmt: UnsafeMutPointer[sqlite3_stmt], toStmt: UnsafeMutPointer[sqlite3_stmt]
     ) -> c_int:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_stmt], UnsafePointer[sqlite3_stmt]) -> c_int](
+        return self.lib.get_function[fn (type_of(fromStmt), type_of(toStmt)) -> c_int](
             "sqlite3_transfer_bindings"
         )(fromStmt, toStmt)
 
@@ -2005,685 +1746,523 @@ struct _sqlite3(Movable):
     fn sqlite3_thread_cleanup(self) -> NoneType:
         return self.lib.get_function[fn () -> NoneType]("sqlite3_thread_cleanup")()
 
-    fn sqlite3_memory_alarm(
-        self, callback: fn (OpaquePointer, sqlite3_int64, c_int) -> NoneType, arg: OpaquePointer, n: sqlite3_int64
+    fn sqlite3_memory_alarm[origin: MutOrigin](
+        self, callback: fn (OpaqueMutPointer[origin], sqlite3_int64, c_int) -> NoneType, arg: OpaqueMutPointer, n: sqlite3_int64
     ) -> c_int:
         return self.lib.get_function[
-            fn (fn (OpaquePointer, sqlite3_int64, c_int) -> NoneType, OpaquePointer, sqlite3_int64) -> c_int
+            fn (type_of(callback), type_of(arg), type_of(n)) -> c_int
         ]("sqlite3_memory_alarm")(callback, arg, n)
 
-    fn sqlite3_value_blob(self, value: UnsafePointer[sqlite3_value]) -> OpaquePointer:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_value]) -> OpaquePointer]("sqlite3_value_blob")(value)
+    fn sqlite3_value_blob(self, value: UnsafeMutPointer[sqlite3_value]) -> OpaqueMutPointer:
+        return self.lib.get_function[fn (type_of(value)) -> OpaqueMutPointer]("sqlite3_value_blob")(value)
 
-    fn sqlite3_value_double(self, value: UnsafePointer[sqlite3_value]) -> Float64:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_value]) -> Float64]("sqlite3_value_double")(value)
+    fn sqlite3_value_double(self, value: UnsafeMutPointer[sqlite3_value]) -> Float64:
+        return self.lib.get_function[fn (type_of(value)) -> Float64]("sqlite3_value_double")(value)
 
-    fn sqlite3_value_int(self, value: UnsafePointer[sqlite3_value]) -> c_int:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_value]) -> c_int]("sqlite3_value_int")(value)
+    fn sqlite3_value_int(self, value: UnsafeMutPointer[sqlite3_value]) -> c_int:
+        return self.lib.get_function[fn (type_of(value)) -> c_int]("sqlite3_value_int")(value)
 
-    fn sqlite3_value_int64(self, value: UnsafePointer[sqlite3_value]) -> sqlite3_int64:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_value]) -> sqlite3_int64]("sqlite3_value_int64")(value)
+    fn sqlite3_value_int64(self, value: UnsafeMutPointer[sqlite3_value]) -> sqlite3_int64:
+        return self.lib.get_function[fn (type_of(value)) -> sqlite3_int64]("sqlite3_value_int64")(value)
 
     fn sqlite3_value_pointer(
-        self, value: UnsafePointer[sqlite3_value], typeStr: UnsafePointer[c_char, mut=False]
-    ) -> OpaquePointer:
+        self, value: UnsafeMutPointer[sqlite3_value], typeStr: UnsafeImmutPointer[c_char]
+    ) -> OpaqueMutPointer:
         return self.lib.get_function[
-            fn (UnsafePointer[sqlite3_value], UnsafePointer[c_char, mut=False]) -> OpaquePointer
+            fn (type_of(value), type_of(typeStr)) -> OpaqueMutPointer
         ]("sqlite3_value_pointer")(value, typeStr)
 
-    fn sqlite3_value_text(self, value: UnsafePointer[sqlite3_value]) -> UnsafePointer[UInt8]:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_value]) -> UnsafePointer[UInt8]]("sqlite3_value_text")(
+    fn sqlite3_value_text(self, value: UnsafeMutPointer[sqlite3_value]) -> UnsafeMutPointer[c_uchar]:
+        return self.lib.get_function[fn (type_of(value)) -> UnsafeMutPointer[c_uchar]]("sqlite3_value_text")(
             value
         )
 
-    fn sqlite3_value_text16(self, value: UnsafePointer[sqlite3_value]) -> OpaquePointer:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_value]) -> OpaquePointer]("sqlite3_value_text16")(value)
+    fn sqlite3_value_bytes(self, value: UnsafeMutPointer[sqlite3_value]) -> c_int:
+        return self.lib.get_function[fn (type_of(value)) -> c_int]("sqlite3_value_bytes")(value)
 
-    fn sqlite3_value_text16le(self, value: UnsafePointer[sqlite3_value]) -> OpaquePointer:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_value]) -> OpaquePointer]("sqlite3_value_text16le")(
-            value
-        )
+    fn sqlite3_value_type(self, value: UnsafeMutPointer[sqlite3_value]) -> c_int:
+        return self.lib.get_function[fn (type_of(value)) -> c_int]("sqlite3_value_type")(value)
 
-    fn sqlite3_value_text16be(self, value: UnsafePointer[sqlite3_value]) -> OpaquePointer:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_value]) -> OpaquePointer]("sqlite3_value_text16be")(
-            value
-        )
+    fn sqlite3_value_numeric_type(self, value: UnsafeMutPointer[sqlite3_value]) -> c_int:
+        return self.lib.get_function[fn (type_of(value)) -> c_int]("sqlite3_value_numeric_type")(value)
 
-    fn sqlite3_value_bytes(self, value: UnsafePointer[sqlite3_value]) -> c_int:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_value]) -> c_int]("sqlite3_value_bytes")(value)
+    fn sqlite3_value_nochange(self, value: UnsafeMutPointer[sqlite3_value]) -> c_int:
+        return self.lib.get_function[fn (type_of(value)) -> c_int]("sqlite3_value_nochange")(value)
 
-    fn sqlite3_value_bytes16(self, value: UnsafePointer[sqlite3_value]) -> c_int:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_value]) -> c_int]("sqlite3_value_bytes16")(value)
+    fn sqlite3_value_frombind(self, value: UnsafeMutPointer[sqlite3_value]) -> c_int:
+        return self.lib.get_function[fn (type_of(value)) -> c_int]("sqlite3_value_frombind")(value)
 
-    fn sqlite3_value_type(self, value: UnsafePointer[sqlite3_value]) -> c_int:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_value]) -> c_int]("sqlite3_value_type")(value)
+    fn sqlite3_value_encoding(self, value: UnsafeMutPointer[sqlite3_value]) -> c_int:
+        return self.lib.get_function[fn (type_of(value)) -> c_int]("sqlite3_value_encoding")(value)
 
-    fn sqlite3_value_numeric_type(self, value: UnsafePointer[sqlite3_value]) -> c_int:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_value]) -> c_int]("sqlite3_value_numeric_type")(value)
+    fn sqlite3_value_subtype(self, value: UnsafeMutPointer[sqlite3_value]) -> c_uint:
+        return self.lib.get_function[fn (type_of(value)) -> c_uint]("sqlite3_value_subtype")(value)
 
-    fn sqlite3_value_nochange(self, value: UnsafePointer[sqlite3_value]) -> c_int:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_value]) -> c_int]("sqlite3_value_nochange")(value)
-
-    fn sqlite3_value_frombind(self, value: UnsafePointer[sqlite3_value]) -> c_int:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_value]) -> c_int]("sqlite3_value_frombind")(value)
-
-    fn sqlite3_value_encoding(self, value: UnsafePointer[sqlite3_value]) -> c_int:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_value]) -> c_int]("sqlite3_value_encoding")(value)
-
-    fn sqlite3_value_subtype(self, value: UnsafePointer[sqlite3_value]) -> UInt32:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_value]) -> UInt32]("sqlite3_value_subtype")(value)
-
-    fn sqlite3_value_dup(self, value: UnsafePointer[sqlite3_value, mut=False]) -> UnsafePointer[sqlite3_value]:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_value, mut=False]) -> UnsafePointer[sqlite3_value]](
+    fn sqlite3_value_dup(self, value: UnsafeImmutPointer[sqlite3_value]) -> UnsafeMutPointer[sqlite3_value]:
+        return self.lib.get_function[fn (type_of(value)) -> UnsafeMutPointer[sqlite3_value]](
             "sqlite3_value_dup"
         )(value)
 
-    fn sqlite3_value_free(self, value: UnsafePointer[sqlite3_value]) -> NoneType:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_value]) -> NoneType]("sqlite3_value_free")(value)
+    fn sqlite3_value_free(self, value: UnsafeMutPointer[sqlite3_value]) -> NoneType:
+        return self.lib.get_function[fn (type_of(value)) -> NoneType]("sqlite3_value_free")(value)
 
-    fn sqlite3_aggregate_context(self, ctx: UnsafePointer[sqlite3_context], nBytes: c_int) -> OpaquePointer:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_context], /, nBytes: c_int) -> OpaquePointer](
+    fn sqlite3_aggregate_context(self, ctx: UnsafeMutPointer[sqlite3_context], nBytes: c_int) -> OpaqueMutPointer:
+        return self.lib.get_function[fn (type_of(ctx), /, nBytes: c_int) -> OpaqueMutPointer](
             "sqlite3_aggregate_context"
         )(ctx, nBytes)
 
-    fn sqlite3_user_data(self, ctx: UnsafePointer[sqlite3_context]) -> OpaquePointer:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_context]) -> OpaquePointer]("sqlite3_user_data")(ctx)
+    fn sqlite3_user_data(self, ctx: UnsafeMutPointer[sqlite3_context]) -> OpaqueMutPointer:
+        return self.lib.get_function[fn (type_of(ctx)) -> OpaqueMutPointer]("sqlite3_user_data")(ctx)
 
-    fn sqlite3_context_db_handle(self, ctx: UnsafePointer[sqlite3_context]) -> UnsafePointer[sqlite3_connection]:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_context]) -> UnsafePointer[sqlite3_connection]](
+    fn sqlite3_context_db_handle(self, ctx: UnsafeMutPointer[sqlite3_context]) -> UnsafeMutPointer[sqlite3_connection]:
+        return self.lib.get_function[fn (type_of(ctx)) -> UnsafeMutPointer[sqlite3_connection]](
             "sqlite3_context_db_handle"
         )(ctx)
 
-    fn sqlite3_get_auxdata(self, ctx: UnsafePointer[sqlite3_context], N: c_int) -> OpaquePointer:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_context], /, N: c_int) -> OpaquePointer](
+    fn sqlite3_get_auxdata(self, ctx: UnsafeMutPointer[sqlite3_context], N: c_int) -> OpaqueMutPointer:
+        return self.lib.get_function[fn (type_of(ctx), type_of(N)) -> OpaqueMutPointer](
             "sqlite3_get_auxdata"
         )(ctx, N)
 
-    fn sqlite3_set_auxdata(
+    fn sqlite3_set_auxdata[origin: MutOrigin](
         self,
-        ctx: UnsafePointer[sqlite3_context],
+        ctx: UnsafeMutPointer[sqlite3_context],
         N: c_int,
-        data: OpaquePointer,
-        destructor: fn (OpaquePointer) -> NoneType,
+        data: OpaqueMutPointer,
+        destructor: fn (OpaqueMutPointer[origin]) -> NoneType,
     ) -> NoneType:
         return self.lib.get_function[
             fn (
-                UnsafePointer[sqlite3_context], /,
-                N: c_int,
-                data: OpaquePointer,
-                destructor: fn (OpaquePointer) -> NoneType,
+                type_of(ctx), type_of(N), type_of(data), type_of(destructor)
             ) -> NoneType
         ]("sqlite3_set_auxdata")(ctx, N, data, destructor)
 
     fn sqlite3_get_clientdata(
-        self, db: UnsafePointer[sqlite3_connection], key: UnsafePointer[c_char, mut=False]
-    ) -> OpaquePointer:
+        self, db: UnsafeMutPointer[sqlite3_connection], key: UnsafeImmutPointer[c_char]
+    ) -> OpaqueMutPointer:
         return self.lib.get_function[
-            fn (UnsafePointer[sqlite3_connection], UnsafePointer[c_char, mut=False]) -> OpaquePointer
+            fn (type_of(db), type_of(key)) -> OpaqueMutPointer
         ]("sqlite3_get_clientdata")(db, key)
 
-    fn sqlite3_set_clientdata(
+    fn sqlite3_set_clientdata[origin: MutOrigin](
         self,
-        db: UnsafePointer[sqlite3_connection],
-        key: UnsafePointer[c_char, mut=False],
-        data: OpaquePointer,
-        destructor: fn (OpaquePointer) -> NoneType,
+        db: UnsafeMutPointer[sqlite3_connection],
+        key: UnsafeImmutPointer[c_char],
+        data: OpaqueMutPointer,
+        destructor: fn (OpaqueMutPointer[origin]) -> NoneType,
     ) -> c_int:
         return self.lib.get_function[
             fn (
-                UnsafePointer[sqlite3_connection],
-                UnsafePointer[c_char, mut=False],
-                OpaquePointer,
-                fn (OpaquePointer) -> NoneType,
+                type_of(db), type_of(key), type_of(data), type_of(destructor)
             ) -> c_int
         ]("sqlite3_set_clientdata")(db, key, data, destructor)
 
-    fn sqlite3_result_blob(
+    fn sqlite3_result_blob[origin: MutOrigin](
         self,
-        ctx: UnsafePointer[sqlite3_context],
-        value: OpaquePointer,
+        ctx: UnsafeMutPointer[sqlite3_context],
+        value: OpaqueMutPointer,
         n: c_int,
-        destructor: fn (OpaquePointer) -> NoneType,
+        destructor: fn (OpaqueMutPointer[origin]) -> NoneType,
     ) -> NoneType:
         return self.lib.get_function[
             fn (
-                UnsafePointer[sqlite3_context],
-                UnsafePointer[NoneType, mut=False],
-                c_int,
-                fn (OpaquePointer) -> NoneType,
+                type_of(ctx), type_of(value), type_of(n), type_of(destructor)
             ) -> NoneType
         ]("sqlite3_result_blob")(ctx, value, n, destructor)
 
-    fn sqlite3_result_blob64(
+    fn sqlite3_result_blob64[origin: MutOrigin](
         self,
-        ctx: UnsafePointer[sqlite3_context],
-        value: OpaquePointer,
+        ctx: UnsafeMutPointer[sqlite3_context],
+        value: OpaqueMutPointer,
         n: sqlite3_uint64,
-        destructor: fn (OpaquePointer) -> NoneType,
+        destructor: fn (OpaqueMutPointer[origin]) -> NoneType,
     ) -> NoneType:
         return self.lib.get_function[
             fn (
-                UnsafePointer[sqlite3_context],
-                UnsafePointer[NoneType, mut=False],
-                sqlite3_uint64,
-                fn (OpaquePointer) -> NoneType,
+                type_of(ctx), type_of(value), type_of(n), type_of(destructor)
             ) -> NoneType
         ]("sqlite3_result_blob64")(ctx, value, n, destructor)
 
-    fn sqlite3_result_double(self, ctx: UnsafePointer[sqlite3_context], value: Float64) -> NoneType:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_context], Float64) -> NoneType]("sqlite3_result_double")(
+    fn sqlite3_result_double(self, ctx: UnsafeMutPointer[sqlite3_context], value: Float64) -> NoneType:
+        return self.lib.get_function[fn (type_of(ctx), type_of(value)) -> NoneType]("sqlite3_result_double")(
             ctx, value
         )
 
     fn sqlite3_result_error(
-        self, ctx: UnsafePointer[sqlite3_context], msg: UnsafePointer[c_char, mut=False], n: c_int
+        self, ctx: UnsafeMutPointer[sqlite3_context], msg: UnsafeImmutPointer[c_char], n: c_int
     ) -> NoneType:
         return self.lib.get_function[
-            fn (UnsafePointer[sqlite3_context], UnsafePointer[c_char, mut=False], c_int) -> NoneType
+            fn (type_of(ctx), type_of(msg), type_of(n)) -> NoneType
         ]("sqlite3_result_error")(ctx, msg, n)
 
-    fn sqlite3_result_error16(
-        self, ctx: UnsafePointer[sqlite3_context], msg: UnsafePointer[NoneType, mut=False], n: c_int
-    ) -> NoneType:
-        return self.lib.get_function[
-            fn (UnsafePointer[sqlite3_context], UnsafePointer[NoneType, mut=False], c_int) -> NoneType
-        ]("sqlite3_result_error16")(ctx, msg, n)
-
-    fn sqlite3_result_error_toobig(self, ctx: UnsafePointer[sqlite3_context]) -> NoneType:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_context]) -> NoneType]("sqlite3_result_error_toobig")(
+    fn sqlite3_result_error_toobig(self, ctx: UnsafeMutPointer[sqlite3_context]) -> NoneType:
+        return self.lib.get_function[fn (type_of(ctx)) -> NoneType]("sqlite3_result_error_toobig")(
             ctx
         )
 
-    fn sqlite3_result_error_nomem(self, ctx: UnsafePointer[sqlite3_context]) -> NoneType:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_context]) -> NoneType]("sqlite3_result_error_nomem")(ctx)
+    fn sqlite3_result_error_nomem(self, ctx: UnsafeMutPointer[sqlite3_context]) -> NoneType:
+        return self.lib.get_function[fn (type_of(ctx)) -> NoneType]("sqlite3_result_error_nomem")(ctx)
 
-    fn sqlite3_result_error_code(self, ctx: UnsafePointer[sqlite3_context], code: c_int) -> NoneType:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_context], c_int) -> NoneType](
+    fn sqlite3_result_error_code(self, ctx: UnsafeMutPointer[sqlite3_context], code: c_int) -> NoneType:
+        return self.lib.get_function[fn (type_of(ctx), type_of(code)) -> NoneType](
             "sqlite3_result_error_code"
         )(ctx, code)
 
-    fn sqlite3_result_int(self, ctx: UnsafePointer[sqlite3_context], value: c_int) -> NoneType:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_context], c_int) -> NoneType]("sqlite3_result_int")(
+    fn sqlite3_result_int(self, ctx: UnsafeMutPointer[sqlite3_context], value: c_int) -> NoneType:
+        return self.lib.get_function[fn (type_of(ctx), type_of(value)) -> NoneType]("sqlite3_result_int")(
             ctx, value
         )
 
-    fn sqlite3_result_int64(self, ctx: UnsafePointer[sqlite3_context], value: sqlite3_int64) -> NoneType:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_context], sqlite3_int64) -> NoneType](
+    fn sqlite3_result_int64(self, ctx: UnsafeMutPointer[sqlite3_context], value: sqlite3_int64) -> NoneType:
+        return self.lib.get_function[fn (type_of(ctx), type_of(value)) -> NoneType](
             "sqlite3_result_int64"
         )(ctx, value)
 
-    fn sqlite3_result_null(self, ctx: UnsafePointer[sqlite3_context]) -> NoneType:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_context]) -> NoneType]("sqlite3_result_null")(ctx)
+    fn sqlite3_result_null(self, ctx: UnsafeMutPointer[sqlite3_context]) -> NoneType:
+        return self.lib.get_function[fn (type_of(ctx)) -> NoneType]("sqlite3_result_null")(ctx)
 
-    fn sqlite3_result_text(
+    fn sqlite3_result_text[origin: MutOrigin](
         self,
-        ctx: UnsafePointer[sqlite3_context],
-        value: UnsafePointer[c_char, mut=False],
+        ctx: UnsafeMutPointer[sqlite3_context],
+        value: UnsafeImmutPointer[c_char],
         n: c_int,
-        destructor: fn (OpaquePointer) -> NoneType,
+        destructor: fn (OpaqueMutPointer[origin]) -> NoneType,
     ) -> NoneType:
         return self.lib.get_function[
             fn (
-                UnsafePointer[sqlite3_context], UnsafePointer[c_char, mut=False], c_int, fn (OpaquePointer) -> NoneType
+                type_of(ctx), type_of(value), type_of(n), type_of(destructor)
             ) -> NoneType
         ]("sqlite3_result_text")(ctx, value, n, destructor)
 
-    fn sqlite3_result_text64(
+    fn sqlite3_result_text64[origin: MutOrigin](
         self,
-        ctx: UnsafePointer[sqlite3_context],
-        value: UnsafePointer[c_char, mut=False],
+        ctx: UnsafeMutPointer[sqlite3_context],
+        value: UnsafeImmutPointer[c_char],
         n: sqlite3_uint64,
-        destructor: fn (OpaquePointer) -> NoneType,
-        encoding: UInt8,
+        destructor: fn (OpaqueMutPointer[origin]) -> NoneType,
+        encoding: c_uchar,
     ) -> NoneType:
         return self.lib.get_function[
             fn (
-                UnsafePointer[sqlite3_context],
-                UnsafePointer[c_char, mut=False],
-                sqlite3_uint64,
-                fn (OpaquePointer) -> NoneType, /,
-                encoding: UInt8,
+                type_of(ctx), type_of(value), type_of(n), type_of(destructor), type_of(encoding)
             ) -> NoneType
         ]("sqlite3_result_text64")(ctx, value, n, destructor, encoding)
 
-    fn sqlite3_result_text16(
-        self,
-        ctx: UnsafePointer[sqlite3_context],
-        value: UnsafePointer[NoneType, mut=False],
-        n: c_int,
-        destructor: fn (OpaquePointer) -> NoneType,
-    ) -> NoneType:
-        return self.lib.get_function[
-            fn (
-                UnsafePointer[sqlite3_context],
-                UnsafePointer[NoneType, mut=False],
-                c_int,
-                fn (OpaquePointer) -> NoneType,
-            ) -> NoneType
-        ]("sqlite3_result_text16")(ctx, value, n, destructor)
-
-    fn sqlite3_result_text16le(
-        self,
-        ctx: UnsafePointer[sqlite3_context],
-        value: UnsafePointer[NoneType, mut=False],
-        n: c_int,
-        destructor: fn (OpaquePointer) -> NoneType,
-    ) -> NoneType:
-        return self.lib.get_function[
-            fn (
-                UnsafePointer[sqlite3_context],
-                UnsafePointer[NoneType, mut=False],
-                c_int,
-                fn (OpaquePointer) -> NoneType,
-            ) -> NoneType
-        ]("sqlite3_result_text16le")(ctx, value, n, destructor)
-
-    fn sqlite3_result_text16be(
-        self,
-        ctx: UnsafePointer[sqlite3_context],
-        value: UnsafePointer[NoneType, mut=False],
-        n: c_int,
-        destructor: fn (OpaquePointer) -> NoneType,
-    ) -> NoneType:
-        return self.lib.get_function[
-            fn (
-                UnsafePointer[sqlite3_context],
-                UnsafePointer[NoneType, mut=False],
-                c_int,
-                fn (OpaquePointer) -> NoneType,
-            ) -> NoneType
-        ]("sqlite3_result_text16be")(ctx, value, n, destructor)
-
-    fn sqlite3_result_value(self, ctx: UnsafePointer[sqlite3_context], value: UnsafePointer[sqlite3_value]) -> NoneType:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_context], UnsafePointer[sqlite3_value]) -> NoneType](
+    fn sqlite3_result_value(self, ctx: UnsafeMutPointer[sqlite3_context], value: UnsafeMutPointer[sqlite3_value]) -> NoneType:
+        return self.lib.get_function[fn (type_of(ctx), type_of(value)) -> NoneType](
             "sqlite3_result_value"
         )(ctx, value)
 
-    fn sqlite3_result_pointer(
+    fn sqlite3_result_pointer[origin: MutOrigin](
         self,
-        ctx: UnsafePointer[sqlite3_context],
-        ptr: OpaquePointer,
-        typeStr: UnsafePointer[c_char, mut=False],
-        destructor: fn (OpaquePointer) -> NoneType,
+        ctx: UnsafeMutPointer[sqlite3_context],
+        ptr: OpaqueMutPointer,
+        typeStr: UnsafeImmutPointer[c_char],
+        destructor: fn (OpaqueMutPointer[origin]) -> NoneType,
     ) -> NoneType:
         return self.lib.get_function[
             fn (
-                UnsafePointer[sqlite3_context],
-                OpaquePointer,
-                UnsafePointer[c_char, mut=False],
-                fn (OpaquePointer) -> NoneType,
+                type_of(ctx), type_of(ptr), type_of(typeStr), type_of(destructor)
             ) -> NoneType
         ]("sqlite3_result_pointer")(ctx, ptr, typeStr, destructor)
 
-    fn sqlite3_result_zeroblob(self, ctx: UnsafePointer[sqlite3_context], n: c_int) -> NoneType:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_context], /, n: c_int) -> NoneType](
+    fn sqlite3_result_zeroblob(self, ctx: UnsafeMutPointer[sqlite3_context], n: c_int) -> NoneType:
+        return self.lib.get_function[fn (type_of(ctx), type_of(n)) -> NoneType](
             "sqlite3_result_zeroblob"
         )(ctx, n)
 
-    fn sqlite3_result_zeroblob64(self, ctx: UnsafePointer[sqlite3_context], n: sqlite3_uint64) -> c_int:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_context], /, n: sqlite3_uint64) -> c_int](
+    fn sqlite3_result_zeroblob64(self, ctx: UnsafeMutPointer[sqlite3_context], n: sqlite3_uint64) -> c_int:
+        return self.lib.get_function[fn (type_of(ctx), type_of(n)) -> c_int](
             "sqlite3_result_zeroblob64"
         )(ctx, n)
 
-    fn sqlite3_result_subtype(self, ctx: UnsafePointer[sqlite3_context], subtype: UInt32) -> NoneType:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_context], UInt32) -> NoneType]("sqlite3_result_subtype")(
+    fn sqlite3_result_subtype(self, ctx: UnsafeMutPointer[sqlite3_context], subtype: c_uint) -> NoneType:
+        return self.lib.get_function[fn (type_of(ctx), type_of(subtype)) -> NoneType]("sqlite3_result_subtype")(
             ctx, subtype
         )
 
-    fn sqlite3_create_collation(
+    fn sqlite3_create_collation[origin: MutOrigin, origin2: ImmutOrigin, origin3: ImmutOrigin](
         self,
-        db: UnsafePointer[sqlite3_connection],
-        zName: UnsafePointer[c_char, mut=False],
+        db: UnsafeMutPointer[sqlite3_connection],
+        zName: UnsafeImmutPointer[c_char],
         eTextRep: c_int,
-        pArg: OpaquePointer,
+        pArg: OpaqueMutPointer,
         xCompare: fn (
-            OpaquePointer, c_int, UnsafePointer[NoneType, mut=False], c_int, UnsafePointer[NoneType, mut=False]
+            OpaqueMutPointer[origin], c_int, OpaqueImmutPointer[origin2], c_int, OpaqueImmutPointer[origin3]
         ) -> c_int,
     ) -> c_int:
         return self.lib.get_function[
             fn (
-                UnsafePointer[sqlite3_connection], /,
-                zName: UnsafePointer[c_char, mut=False],
-                eTextRep: c_int,
-                pArg: OpaquePointer,
-                xCompare: fn (
-                    OpaquePointer, c_int, UnsafePointer[NoneType, mut=False], c_int, UnsafePointer[NoneType, mut=False]
-                ) -> c_int,
+                type_of(db), type_of(zName), type_of(eTextRep), type_of(pArg), type_of(xCompare)
             ) -> c_int
         ]("sqlite3_create_collation")(db, zName, eTextRep, pArg, xCompare)
 
-    fn sqlite3_create_collation_v2(
+    fn sqlite3_create_collation_v2[origin: MutOrigin, origin2: ImmutOrigin, origin3: ImmutOrigin, origin4: MutOrigin](
         self,
-        db: UnsafePointer[sqlite3_connection],
-        zName: UnsafePointer[c_char, mut=False],
+        db: UnsafeMutPointer[sqlite3_connection],
+        zName: UnsafeImmutPointer[c_char],
         eTextRep: c_int,
-        pArg: OpaquePointer,
+        pArg: OpaqueMutPointer,
         xCompare: fn (
-            OpaquePointer, c_int, UnsafePointer[NoneType, mut=False], c_int, UnsafePointer[NoneType, mut=False]
+            OpaqueMutPointer[origin], c_int, OpaqueImmutPointer[origin2], c_int, OpaqueImmutPointer[origin3]
         ) -> c_int,
-        xDestroy: fn (OpaquePointer) -> NoneType,
+        xDestroy: fn (OpaqueMutPointer[origin4]) -> NoneType,
     ) -> c_int:
         return self.lib.get_function[
             fn (
-                UnsafePointer[sqlite3_connection], /,
-                zName: UnsafePointer[c_char, mut=False],
-                eTextRep: c_int,
-                pArg: OpaquePointer,
-                xCompare: fn (
-                    OpaquePointer, c_int, UnsafePointer[NoneType, mut=False], c_int, UnsafePointer[NoneType, mut=False]
-                ) -> c_int,
-                xDestroy: fn (OpaquePointer) -> NoneType,
+                type_of(db), type_of(zName), type_of(eTextRep), type_of(pArg), type_of(xCompare), type_of(xDestroy)
             ) -> c_int
         ]("sqlite3_create_collation_v2")(db, zName, eTextRep, pArg, xCompare, xDestroy)
 
-    fn sqlite3_create_collation16(
+    fn sqlite3_collation_needed[origin: MutOrigin, origin2: MutOrigin, origin3: ImmutOrigin, origin4: MutOrigin](
         self,
-        db: UnsafePointer[sqlite3_connection],
-        zName: UnsafePointer[NoneType, mut=False],
-        eTextRep: c_int,
-        pArg: OpaquePointer,
-        xCompare: fn (
-            OpaquePointer, c_int, UnsafePointer[NoneType, mut=False], c_int, UnsafePointer[NoneType, mut=False]
-        ) -> c_int,
-    ) -> c_int:
-        return self.lib.get_function[
-            fn (
-                UnsafePointer[sqlite3_connection], /,
-                zName: UnsafePointer[NoneType, mut=False],
-                eTextRep: c_int,
-                pArg: OpaquePointer,
-                xCompare: fn (
-                    OpaquePointer, c_int, UnsafePointer[NoneType, mut=False], c_int, UnsafePointer[NoneType, mut=False]
-                ) -> c_int,
-            ) -> c_int
-        ]("sqlite3_create_collation16")(db, zName, eTextRep, pArg, xCompare)
-
-    fn sqlite3_collation_needed(
-        self,
-        db: UnsafePointer[sqlite3_connection],
-        pArg: OpaquePointer,
+        db: UnsafeMutPointer[sqlite3_connection],
+        pArg: OpaqueMutPointer,
         callback: fn (
-            OpaquePointer, UnsafePointer[sqlite3_connection], c_int, UnsafePointer[c_char, mut=False]
+            OpaqueMutPointer[origin], UnsafeMutPointer[sqlite3_connection, origin2], c_int, UnsafeImmutPointer[c_char, origin3]
         ) -> NoneType,
     ) -> c_int:
         return self.lib.get_function[
             fn (
-                UnsafePointer[sqlite3_connection],
-                OpaquePointer,
-                fn (
-                    OpaquePointer, UnsafePointer[sqlite3_connection], c_int, UnsafePointer[c_char, mut=False]
-                ) -> NoneType,
+                type_of(db), type_of(pArg), type_of(callback)
             ) -> c_int
         ]("sqlite3_collation_needed")(db, pArg, callback)
 
-    fn sqlite3_collation_needed16(
-        self,
-        db: UnsafePointer[sqlite3_connection],
-        pArg: OpaquePointer,
-        callback: fn (
-            OpaquePointer, UnsafePointer[sqlite3_connection], c_int, UnsafePointer[NoneType, mut=False]
-        ) -> NoneType,
-    ) -> c_int:
-        return self.lib.get_function[
-            fn (
-                UnsafePointer[sqlite3_connection],
-                OpaquePointer,
-                read fn (
-                    OpaquePointer, UnsafePointer[sqlite3_connection], c_int, UnsafePointer[NoneType, mut=False]
-                ) -> NoneType,
-            ) -> c_int
-        ]("sqlite3_collation_needed16")(db, pArg, callback)
-
     fn sqlite3_sleep(self, ms: c_int) -> c_int:
-        return self.lib.get_function[fn (c_int) -> c_int]("sqlite3_sleep")(ms)
+        return self.lib.get_function[fn (type_of(ms)) -> c_int]("sqlite3_sleep")(ms)
 
     fn sqlite3_soft_heap_limit(self, n: c_int) -> c_int:
-        return self.lib.get_function[fn (c_int) -> c_int]("sqlite3_soft_heap_limit")(n)
+        return self.lib.get_function[fn (type_of(n)) -> c_int]("sqlite3_soft_heap_limit")(n)
 
     fn sqlite3_soft_heap_limit64(self, n: sqlite3_int64) -> sqlite3_int64:
-        return self.lib.get_function[fn (sqlite3_int64) -> sqlite3_int64]("sqlite3_soft_heap_limit64")(n)
+        return self.lib.get_function[fn (type_of(n)) -> sqlite3_int64]("sqlite3_soft_heap_limit64")(n)
 
     fn sqlite3_status(
-        self, op: c_int, pCurrent: UnsafePointer[c_int], pHighwater: UnsafePointer[c_int], resetFlag: c_int
+        self, op: c_int, pCurrent: UnsafeMutPointer[c_int], pHighwater: UnsafeMutPointer[c_int], resetFlag: c_int
     ) -> c_int:
-        return self.lib.get_function[fn (c_int, UnsafePointer[c_int], UnsafePointer[c_int], c_int) -> c_int](
+        return self.lib.get_function[fn (type_of(op), type_of(pCurrent), type_of(pHighwater), type_of(resetFlag)) -> c_int](
             "sqlite3_status"
         )(op, pCurrent, pHighwater, resetFlag)
 
     fn sqlite3_status64(
         self,
         op: c_int,
-        pCurrent: UnsafePointer[sqlite3_int64],
-        pHighwater: UnsafePointer[sqlite3_int64],
+        pCurrent: UnsafeMutPointer[sqlite3_int64],
+        pHighwater: UnsafeMutPointer[sqlite3_int64],
         resetFlag: c_int,
     ) -> c_int:
         return self.lib.get_function[
-            fn (c_int, UnsafePointer[sqlite3_int64], UnsafePointer[sqlite3_int64], c_int) -> c_int
+            fn (type_of(op), type_of(pCurrent), type_of(pHighwater), type_of(resetFlag)) -> c_int
         ]("sqlite3_status64")(op, pCurrent, pHighwater, resetFlag)
 
     fn sqlite3_db_status(
         self,
-        db: UnsafePointer[sqlite3_connection],
+        db: UnsafeMutPointer[sqlite3_connection],
         op: c_int,
-        pCurrent: UnsafePointer[c_int],
-        pHighwater: UnsafePointer[c_int],
+        pCurrent: UnsafeMutPointer[c_int],
+        pHighwater: UnsafeMutPointer[c_int],
         resetFlag: c_int,
     ) -> c_int:
         return self.lib.get_function[
-            fn (UnsafePointer[sqlite3_connection], c_int, UnsafePointer[c_int], UnsafePointer[c_int], c_int) -> c_int
+            fn (type_of(db), type_of(op), type_of(pCurrent), type_of(pHighwater), type_of(resetFlag)) -> c_int
         ]("sqlite3_db_status")(db, op, pCurrent, pHighwater, resetFlag)
 
-    fn sqlite3_stmt_status(self, pStmt: UnsafePointer[sqlite3_stmt], op: c_int, resetFlg: c_int) -> c_int:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_stmt], c_int, c_int) -> c_int]("sqlite3_stmt_status")(
+    fn sqlite3_stmt_status(self, pStmt: UnsafeMutPointer[sqlite3_stmt], op: c_int, resetFlg: c_int) -> c_int:
+        return self.lib.get_function[fn (type_of(pStmt), type_of(op), type_of(resetFlg)) -> c_int]("sqlite3_stmt_status")(
             pStmt, op, resetFlg
         )
 
-    fn sqlite3_stmt_scanstatus(
+    fn sqlite3_stmt_scanstatus[origin: MutOrigin](
         self,
-        pStmt: UnsafePointer[sqlite3_stmt],
+        pStmt: UnsafeMutPointer[sqlite3_stmt],
         idx: c_int,
         what: c_int,
-        out_ptr: UnsafePointer[OpaquePointer],
+        out_ptr: UnsafeMutPointer[OpaqueMutPointer[origin]],
     ) -> c_int:
         return self.lib.get_function[
-            fn (UnsafePointer[sqlite3_stmt], c_int, c_int, UnsafePointer[OpaquePointer]) -> c_int
+            fn (type_of(pStmt), type_of(idx), type_of(what), type_of(out_ptr)) -> c_int
         ]("sqlite3_stmt_scanstatus")(pStmt, idx, what, out_ptr)
 
-    fn sqlite3_stmt_scanstatus_reset(self, pStmt: UnsafePointer[sqlite3_stmt]) -> NoneType:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_stmt]) -> NoneType]("sqlite3_stmt_scanstatus_reset")(
+    fn sqlite3_stmt_scanstatus_reset(self, pStmt: UnsafeMutPointer[sqlite3_stmt]) -> NoneType:
+        return self.lib.get_function[fn (type_of(pStmt)) -> NoneType]("sqlite3_stmt_scanstatus_reset")(
             pStmt
         )
 
-    fn sqlite3_table_column_metadata(
+    fn sqlite3_table_column_metadata[origin: ImmutOrigin, origin2: ImmutOrigin](
         self,
-        db: UnsafePointer[sqlite3_connection],
-        zDbName: UnsafePointer[c_char, mut=False],
-        zTableName: UnsafePointer[c_char, mut=False],
-        zColumnName: UnsafePointer[c_char, mut=False],
-        pzDataType: UnsafePointer[UnsafePointer[c_char, mut=False]],
-        pzCollSeq: UnsafePointer[UnsafePointer[c_char, mut=False]],
-        pNotNull: UnsafePointer[c_int],
-        pPrimaryKey: UnsafePointer[c_int],
-        pAutoinc: UnsafePointer[c_int],
+        db: UnsafeMutPointer[sqlite3_connection],
+        zDbName: UnsafeImmutPointer[c_char],
+        zTableName: UnsafeImmutPointer[c_char],
+        zColumnName: UnsafeImmutPointer[c_char],
+        pzDataType: UnsafeMutPointer[UnsafeImmutPointer[c_char, origin]],
+        pzCollSeq: UnsafeMutPointer[UnsafeImmutPointer[c_char, origin2]],
+        pNotNull: UnsafeMutPointer[c_int],
+        pPrimaryKey: UnsafeMutPointer[c_int],
+        pAutoinc: UnsafeMutPointer[c_int],
     ) -> c_int:
         return self.lib.get_function[
             fn (
-                db: UnsafePointer[sqlite3_connection],
-                zDbName: UnsafePointer[c_char, mut=False],
-                zTableName: UnsafePointer[c_char, mut=False],
-                zColumnName: UnsafePointer[c_char, mut=False],
-                pzDataType: UnsafePointer[UnsafePointer[c_char, mut=False]],
-                pzCollSeq: UnsafePointer[UnsafePointer[c_char, mut=False]],
-                pNotNull: UnsafePointer[c_int],
-                pPrimaryKey: UnsafePointer[c_int],
-                pAutoinc: UnsafePointer[c_int],
+                type_of(db),
+                type_of(zDbName),
+                type_of(zTableName),
+                type_of(zColumnName),
+                type_of(pzDataType),
+                type_of(pzCollSeq),
+                type_of(pNotNull),
+                type_of(pPrimaryKey),
+                type_of(pAutoinc),
             ) -> c_int
         ]("sqlite3_table_column_metadata")(
             db, zDbName, zTableName, zColumnName, pzDataType, pzCollSeq, pNotNull, pPrimaryKey, pAutoinc
         )
 
-    fn sqlite3_load_extension(
+    fn sqlite3_load_extension[origin: MutOrigin](
         self,
-        db: UnsafePointer[sqlite3_connection],
-        zFile: UnsafePointer[c_char, mut=False],
-        zProc: UnsafePointer[c_char, mut=False],
-        pzErrMsg: UnsafePointer[UnsafePointer[c_char]],
+        db: UnsafeMutPointer[sqlite3_connection],
+        zFile: UnsafeImmutPointer[c_char],
+        zProc: UnsafeImmutPointer[c_char],
+        pzErrMsg: UnsafeMutPointer[UnsafeMutPointer[c_char, origin]],
     ) -> c_int:
         return self.lib.get_function[
             fn (
-                db: UnsafePointer[sqlite3_connection],
-                zFile: UnsafePointer[c_char, mut=False],
-                zProc: UnsafePointer[c_char, mut=False],
-                pzErrMsg: UnsafePointer[UnsafePointer[c_char]],
+                type_of(db), type_of(zFile), type_of(zProc), type_of(pzErrMsg)
             ) -> c_int
         ]("sqlite3_load_extension")(db, zFile, zProc, pzErrMsg)
 
-    fn sqlite3_enable_load_extension(self, db: UnsafePointer[sqlite3_connection], onoff: c_int) -> c_int:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_connection], c_int) -> c_int](
+    fn sqlite3_enable_load_extension(self, db: UnsafeMutPointer[sqlite3_connection], onoff: c_int) -> c_int:
+        return self.lib.get_function[fn (type_of(db), c_int) -> c_int](
             "sqlite3_enable_load_extension"
         )(db, onoff)
 
-    fn sqlite3_win32_set_directory(self, type_: UInt64, zValue: OpaquePointer) -> c_int:
-        return self.lib.get_function[fn (type_: UInt64, zValue: OpaquePointer) -> c_int]("sqlite3_win32_set_directory")(
-            type_, zValue
+    fn sqlite3_win32_set_directory(self, type: c_ulong, zValue: OpaqueMutPointer) -> c_int:
+        return self.lib.get_function[fn (type_of(type), type_of(zValue)) -> c_int]("sqlite3_win32_set_directory")(
+            type, zValue
         )
 
-    fn sqlite3_win32_set_directory8(self, type_: UInt64, zValue: UnsafePointer[c_char, mut=False]) -> c_int:
-        return self.lib.get_function[fn (type_: UInt64, zValue: UnsafePointer[c_char, mut=False]) -> c_int](
+    fn sqlite3_win32_set_directory8(self, type: c_ulong, zValue: UnsafeImmutPointer[c_char]) -> c_int:
+        return self.lib.get_function[fn (type_of(type), type_of(zValue)) -> c_int](
             "sqlite3_win32_set_directory8"
-        )(type_, zValue)
+        )(type, zValue)
 
-    fn sqlite3_win32_set_directory16(self, type_: UInt64, read zValue: OpaquePointer) -> c_int:
-        return self.lib.get_function[fn (type_: UInt64, read zValue: OpaquePointer) -> c_int](
-            "sqlite3_win32_set_directory16"
-        )(type_, zValue)
+    fn sqlite3_get_autocommit(self, db: UnsafeMutPointer[sqlite3_connection]) -> c_int:
+        return self.lib.get_function[fn (type_of(db)) -> c_int]("sqlite3_get_autocommit")(db)
 
-    fn sqlite3_get_autocommit(self, db: UnsafePointer[sqlite3_connection]) -> c_int:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_connection]) -> c_int]("sqlite3_get_autocommit")(db)
-
-    fn sqlite3_db_handle(self, pStmt: UnsafePointer[sqlite3_stmt]) -> UnsafePointer[sqlite3_connection]:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_stmt]) -> UnsafePointer[sqlite3_connection]](
+    fn sqlite3_db_handle(self, pStmt: UnsafeMutPointer[sqlite3_stmt]) -> UnsafeMutPointer[sqlite3_connection]:
+        return self.lib.get_function[fn (type_of(pStmt)) -> UnsafeMutPointer[sqlite3_connection]](
             "sqlite3_db_handle"
         )(pStmt)
 
-    fn sqlite3_db_name(self, db: UnsafePointer[sqlite3_connection], N: c_int) -> UnsafePointer[c_char, mut=False]:
+    fn sqlite3_db_name(self, db: UnsafeMutPointer[sqlite3_connection], N: c_int) -> UnsafeImmutPointer[c_char]:
         return self.lib.get_function[
-            fn (db: UnsafePointer[sqlite3_connection], N: c_int) -> UnsafePointer[c_char, mut=False]
+            fn (type_of(db), type_of(N)) -> UnsafeImmutPointer[c_char]
         ]("sqlite3_db_name")(db, N)
 
     fn sqlite3_db_filename(
-        self, db: UnsafePointer[sqlite3_connection], zDbName: UnsafePointer[c_char, mut=False]
+        self, db: UnsafeMutPointer[sqlite3_connection], zDbName: UnsafeImmutPointer[c_char]
     ) -> sqlite3_filename:
         return self.lib.get_function[
-            fn (db: UnsafePointer[sqlite3_connection], zDbName: UnsafePointer[c_char, mut=False]) -> sqlite3_filename
+            fn (type_of(db), type_of(zDbName)) -> sqlite3_filename
         ]("sqlite3_db_filename")(db, zDbName)
 
     fn sqlite3_db_readonly(
-        self, db: UnsafePointer[sqlite3_connection], zDbName: UnsafePointer[c_char, mut=False]
+        self, db: UnsafeMutPointer[sqlite3_connection], zDbName: UnsafeImmutPointer[c_char]
     ) -> c_int:
         return self.lib.get_function[
-            fn (db: UnsafePointer[sqlite3_connection], zDbName: UnsafePointer[c_char, mut=False]) -> c_int
+            fn (type_of(db), type_of(zDbName)) -> c_int
         ]("sqlite3_db_readonly")(db, zDbName)
 
     fn sqlite3_txn_state(
-        self, db: UnsafePointer[sqlite3_connection], /, zSchema: UnsafePointer[c_char, mut=False]
+        self, db: UnsafeMutPointer[sqlite3_connection], /, zSchema: UnsafeImmutPointer[c_char]
     ) -> c_int:
         return self.lib.get_function[
-            fn (UnsafePointer[sqlite3_connection], /, zSchema: UnsafePointer[c_char, mut=False]) -> c_int
+            fn (type_of(db), type_of(zSchema)) -> c_int
         ]("sqlite3_txn_state")(db, zSchema)
 
     fn sqlite3_next_stmt(
-        self, pDb: UnsafePointer[sqlite3_connection], pStmt: UnsafePointer[sqlite3_stmt]
-    ) -> UnsafePointer[sqlite3_stmt]:
+        self, pDb: UnsafeMutPointer[sqlite3_connection], pStmt: UnsafeMutPointer[sqlite3_stmt]
+    ) -> UnsafeMutPointer[sqlite3_stmt]:
         return self.lib.get_function[
             fn (
-                pDb: UnsafePointer[sqlite3_connection], pStmt: UnsafePointer[sqlite3_stmt]
-            ) -> UnsafePointer[sqlite3_stmt]
+                type_of(pDb), type_of(pStmt)
+            ) -> UnsafeMutPointer[sqlite3_stmt]
         ]("sqlite3_next_stmt")(pDb, pStmt)
 
     fn sqlite3_update_hook(
         self,
-        db: UnsafePointer[sqlite3_connection],
-        xCallback: UnsafePointer[
-            fn (UnsafePointer[NoneType], c_int, UnsafePointer[c_char], UnsafePointer[c_char], Int64)
+        db: UnsafeMutPointer[sqlite3_connection],
+        xCallback: UnsafeMutPointer[
+            fn (OpaqueMutPointer, c_int, UnsafeMutPointer[c_char], UnsafeMutPointer[c_char], Int64)
         ],
-        pArg: UnsafePointer[NoneType],
+        pArg: OpaqueMutPointer,
     ) -> None:
         self.lib.get_function[
             fn (
-                UnsafePointer[sqlite3_connection],
-                UnsafePointer[fn (OpaquePointer, c_int, UnsafePointer[c_char], UnsafePointer[c_char], sqlite3_int64)],
-                OpaquePointer,
+                type_of(db), type_of(xCallback), type_of(pArg)
             ) -> None
         ]("sqlite3_update_hook")(db, xCallback, pArg)
 
     fn sqlite3_commit_hook(
         self,
-        db: UnsafePointer[sqlite3_connection],
-        xCallback: UnsafePointer[fn (UnsafePointer[NoneType]) -> c_int],
-        pArg: UnsafePointer[NoneType],
-    ) -> UnsafePointer[NoneType]:
+        db: UnsafeMutPointer[sqlite3_connection],
+        xCallback: UnsafeMutPointer[fn (OpaqueMutPointer) -> c_int],
+        pArg: OpaqueMutPointer,
+    ) -> OpaqueMutPointer:
         return self.lib.get_function[
             fn (
-                UnsafePointer[sqlite3_connection], UnsafePointer[fn (UnsafePointer[NoneType]) -> c_int], OpaquePointer
-            ) -> UnsafePointer[NoneType]
+                type_of(db), type_of(xCallback), type_of(pArg)
+            ) -> OpaqueMutPointer
         ]("sqlite3_commit_hook")(db, xCallback, pArg)
 
     fn sqlite3_rollback_hook(
         self,
-        db: UnsafePointer[sqlite3_connection],
-        xCallback: UnsafePointer[fn (UnsafePointer[NoneType])],
-        pArg: UnsafePointer[NoneType],
-    ) -> UnsafePointer[NoneType]:
+        db: UnsafeMutPointer[sqlite3_connection],
+        xCallback: UnsafeMutPointer[fn (OpaqueMutPointer)],
+        pArg: OpaqueMutPointer,
+    ) -> OpaqueMutPointer:
         return self.lib.get_function[
             fn (
-                UnsafePointer[sqlite3_connection], UnsafePointer[fn (UnsafePointer[NoneType])], OpaquePointer
-            ) -> OpaquePointer
+                type_of(db), type_of(xCallback), type_of(pArg)
+            ) -> OpaqueMutPointer
         ]("sqlite3_rollback_hook")(db, xCallback, pArg)
 
     fn sqlite3_autovacuum_pages(
         self,
-        db: UnsafePointer[sqlite3_connection],
-        xCallback: UnsafePointer[
-            fn (UnsafePointer[NoneType], UnsafePointer[c_char, mut=False], c_uint, c_uint, c_uint) -> c_int
+        db: UnsafeMutPointer[sqlite3_connection],
+        xCallback: UnsafeMutPointer[
+            fn (OpaqueMutPointer, UnsafeImmutPointer[c_char], c_uint, c_uint, c_uint) -> c_int
         ],
-        pArg: UnsafePointer[NoneType],
+        pArg: OpaqueMutPointer,
         eMode: c_int,
     ) -> c_int:
         return self.lib.get_function[
             fn (
-                UnsafePointer[sqlite3_connection],
-                UnsafePointer[
-                    fn (UnsafePointer[NoneType], UnsafePointer[c_char, mut=False], c_uint, c_uint, c_uint) -> c_int
-                ],
-                OpaquePointer,
-                c_int,
+                type_of(db), type_of(xCallback), type_of(pArg), type_of(eMode)
             ) -> c_int
         ]("sqlite3_autovacuum_pages")(db, xCallback, pArg, eMode)
 
     # sqlite3_auto_extension
-    fn sqlite3_auto_extension(self, xEntryPoint: UnsafePointer[fn () -> c_int]) -> c_int:
-        return self.lib.get_function[fn (UnsafePointer[fn () -> c_int]) -> c_int]("sqlite3_auto_extension")(xEntryPoint)
+    fn sqlite3_auto_extension(self, xEntryPoint: UnsafeMutPointer[fn () -> c_int]) -> c_int:
+        return self.lib.get_function[fn (type_of(xEntryPoint)) -> c_int]("sqlite3_auto_extension")(xEntryPoint)
 
     # sqlite3_enable_shared_cache
     fn sqlite3_enable_shared_cache(self, enable: c_int) -> c_int:
-        return self.lib.get_function[fn (c_int) -> c_int]("sqlite3_enable_shared_cache")(enable)
+        return self.lib.get_function[fn (type_of(enable)) -> c_int]("sqlite3_enable_shared_cache")(enable)
 
     # sqlite3_release_memory
     fn sqlite3_release_memory(self, bytes: c_int) -> c_int:
-        return self.lib.get_function[fn (c_int) -> c_int]("sqlite3_release_memory")(bytes)
+        return self.lib.get_function[fn (type_of(bytes)) -> c_int]("sqlite3_release_memory")(bytes)
 
     # sqlite3_db_release_memory
-    fn sqlite3_db_release_memory(self, db: UnsafePointer[sqlite3_connection]) -> c_int:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_connection]) -> c_int]("sqlite3_db_release_memory")(db)
+    fn sqlite3_db_release_memory(self, db: UnsafeMutPointer[sqlite3_connection]) -> c_int:
+        return self.lib.get_function[fn (type_of(db)) -> c_int]("sqlite3_db_release_memory")(db)
 
     # sqlite3_hard_heap_limit64
     fn sqlite3_hard_heap_limit64(self, n: Int64) -> Int64:
-        return self.lib.get_function[fn (Int64) -> Int64]("sqlite3_hard_heap_limit64")(n)
+        return self.lib.get_function[fn (type_of(n)) -> Int64]("sqlite3_hard_heap_limit64")(n)
 
     # sqlite3_cancel_auto_extension
-    fn sqlite3_cancel_auto_extension(self, xEntryPoint: UnsafePointer[fn () -> c_int]) -> c_int:
-        return self.lib.get_function[fn (UnsafePointer[fn () -> c_int]) -> c_int]("sqlite3_cancel_auto_extension")(
+    fn sqlite3_cancel_auto_extension(self, xEntryPoint: UnsafeMutPointer[fn () -> c_int]) -> c_int:
+        return self.lib.get_function[fn (type_of(xEntryPoint)) -> c_int]("sqlite3_cancel_auto_extension")(
             xEntryPoint
         )
 
@@ -2691,103 +2270,94 @@ struct _sqlite3(Movable):
     fn sqlite3_reset_auto_extension(self) -> c_int:
         return self.lib.get_function[fn () -> c_int]("sqlite3_reset_auto_extension")()
 
-    fn sqlite3_blob_open(
+    fn sqlite3_blob_open[origin: MutOrigin](
         self,
-        db: UnsafePointer[sqlite3_connection],
-        zDb: UnsafePointer[c_char, mut=False],
-        zTable: UnsafePointer[c_char, mut=False],
-        zColumn: UnsafePointer[c_char, mut=False],
+        db: UnsafeMutPointer[sqlite3_connection],
+        zDb: UnsafeImmutPointer[c_char],
+        zTable: UnsafeImmutPointer[c_char],
+        zColumn: UnsafeImmutPointer[c_char],
         iRow: sqlite3_int64,
         flags: c_int,
-        ppBlob: UnsafePointer[UnsafePointer[sqlite3_blob]],
+        ppBlob: UnsafeMutPointer[UnsafeMutPointer[sqlite3_blob, origin]],
     ) -> c_int:
         return self.lib.get_function[
             fn (
-                UnsafePointer[sqlite3_connection],
-                UnsafePointer[c_char, mut=False],
-                UnsafePointer[c_char, mut=False],
-                UnsafePointer[c_char, mut=False],
-                sqlite3_int64,
-                c_int,
-                UnsafePointer[UnsafePointer[sqlite3_blob]],
+                type_of(db), type_of(zDb), type_of(zTable), type_of(zColumn), type_of(iRow), type_of(flags), type_of(ppBlob)
             ) -> c_int
         ]("sqlite3_blob_open")(db, zDb, zTable, zColumn, iRow, flags, ppBlob)
 
-    fn sqlite3_blob_reopen(self, pBlob: UnsafePointer[sqlite3_blob], iRow: sqlite3_int64) -> c_int:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_blob], sqlite3_int64) -> c_int]("sqlite3_blob_reopen")(
+    fn sqlite3_blob_reopen(self, pBlob: UnsafeMutPointer[sqlite3_blob], iRow: sqlite3_int64) -> c_int:
+        return self.lib.get_function[fn (type_of(pBlob), type_of(iRow)) -> c_int]("sqlite3_blob_reopen")(
             pBlob, iRow
         )
 
-    fn sqlite3_blob_close(self, pBlob: UnsafePointer[sqlite3_blob]) -> c_int:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_blob]) -> c_int]("sqlite3_blob_close")(pBlob)
+    fn sqlite3_blob_close(self, pBlob: UnsafeMutPointer[sqlite3_blob]) -> c_int:
+        return self.lib.get_function[fn (type_of(pBlob)) -> c_int]("sqlite3_blob_close")(pBlob)
 
-    fn sqlite3_blob_bytes(self, pBlob: UnsafePointer[sqlite3_blob]) -> c_int:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_blob]) -> c_int]("sqlite3_blob_bytes")(pBlob)
+    fn sqlite3_blob_bytes(self, pBlob: UnsafeMutPointer[sqlite3_blob]) -> c_int:
+        return self.lib.get_function[fn (type_of(pBlob)) -> c_int]("sqlite3_blob_bytes")(pBlob)
 
-    fn sqlite3_blob_read(self, pBlob: UnsafePointer[sqlite3_blob], Z: OpaquePointer, N: c_int, iOffset: c_int) -> c_int:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_blob], OpaquePointer, c_int, c_int) -> c_int](
+    fn sqlite3_blob_read(self, pBlob: UnsafeMutPointer[sqlite3_blob], Z: OpaqueMutPointer, N: c_int, iOffset: c_int) -> c_int:
+        return self.lib.get_function[fn (type_of(pBlob), type_of(Z), type_of(N), type_of(iOffset)) -> c_int](
             "sqlite3_blob_read"
         )(pBlob, Z, N, iOffset)
 
     fn sqlite3_blob_write(
-        self, pBlob: UnsafePointer[sqlite3_blob], z: OpaquePointer, n: c_int, iOffset: c_int
+        self, pBlob: UnsafeMutPointer[sqlite3_blob], z: OpaqueMutPointer, n: c_int, iOffset: c_int
     ) -> c_int:
         return self.lib.get_function[
-            fn (UnsafePointer[sqlite3_blob], UnsafePointer[NoneType, mut=False], c_int, c_int) -> c_int
+            fn (type_of(pBlob), type_of(z), type_of(n), type_of(iOffset)) -> c_int
         ]("sqlite3_blob_write")(pBlob, z, n, iOffset)
 
-    fn sqlite3_vfs_find(self, zVfsName: UnsafePointer[c_char, mut=False]) -> UnsafePointer[sqlite3_vfs]:
-        return self.lib.get_function[fn (UnsafePointer[c_char, mut=False]) -> UnsafePointer[sqlite3_vfs]](
+    fn sqlite3_vfs_find(self, zVfsName: UnsafeImmutPointer[c_char]) -> UnsafeMutPointer[sqlite3_vfs]:
+        return self.lib.get_function[fn (type_of(zVfsName)) -> UnsafeMutPointer[sqlite3_vfs]](
             "sqlite3_vfs_find"
         )(zVfsName)
 
-    fn sqlite3_vfs_register(self, pVfs: UnsafePointer[sqlite3_vfs], makeDflt: c_int) -> c_int:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_vfs], c_int) -> c_int]("sqlite3_vfs_register")(
+    fn sqlite3_vfs_register(self, pVfs: UnsafeMutPointer[sqlite3_vfs], makeDflt: c_int) -> c_int:
+        return self.lib.get_function[fn (type_of(pVfs), type_of(makeDflt)) -> c_int]("sqlite3_vfs_register")(
             pVfs, makeDflt
         )
 
-    fn sqlite3_vfs_unregister(self, pVfs: UnsafePointer[sqlite3_vfs]) -> c_int:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_vfs]) -> c_int]("sqlite3_vfs_unregister")(pVfs)
+    fn sqlite3_vfs_unregister(self, pVfs: UnsafeMutPointer[sqlite3_vfs]) -> c_int:
+        return self.lib.get_function[fn (type_of(pVfs)) -> c_int]("sqlite3_vfs_unregister")(pVfs)
 
-    fn sqlite3_mutex_alloc(self, id: c_int) -> UnsafePointer[sqlite3_mutex]:
-        return self.lib.get_function[fn (c_int) -> UnsafePointer[sqlite3_mutex]]("sqlite3_mutex_alloc")(id)
+    fn sqlite3_mutex_alloc(self, id: c_int) -> UnsafeMutPointer[sqlite3_mutex]:
+        return self.lib.get_function[fn (c_int) -> UnsafeMutPointer[sqlite3_mutex]]("sqlite3_mutex_alloc")(id)
 
-    fn sqlite3_mutex_free(self, pMutex: UnsafePointer[sqlite3_mutex]) -> NoneType:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_mutex]) -> NoneType]("sqlite3_mutex_free")(pMutex)
+    fn sqlite3_mutex_free(self, pMutex: UnsafeMutPointer[sqlite3_mutex]) -> NoneType:
+        return self.lib.get_function[fn (type_of(pMutex)) -> NoneType]("sqlite3_mutex_free")(pMutex)
 
-    fn sqlite3_mutex_enter(self, pMutex: UnsafePointer[sqlite3_mutex]) -> NoneType:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_mutex]) -> NoneType]("sqlite3_mutex_enter")(pMutex)
+    fn sqlite3_mutex_enter(self, pMutex: UnsafeMutPointer[sqlite3_mutex]) -> NoneType:
+        return self.lib.get_function[fn (type_of(pMutex)) -> NoneType]("sqlite3_mutex_enter")(pMutex)
 
-    fn sqlite3_mutex_try(self, pMutex: UnsafePointer[sqlite3_mutex]) -> c_int:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_mutex]) -> c_int]("sqlite3_mutex_try")(pMutex)
+    fn sqlite3_mutex_try(self, pMutex: UnsafeMutPointer[sqlite3_mutex]) -> c_int:
+        return self.lib.get_function[fn (type_of(pMutex)) -> c_int]("sqlite3_mutex_try")(pMutex)
 
-    fn sqlite3_mutex_leave(self, pMutex: UnsafePointer[sqlite3_mutex]) -> NoneType:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_mutex]) -> NoneType]("sqlite3_mutex_leave")(pMutex)
+    fn sqlite3_mutex_leave(self, pMutex: UnsafeMutPointer[sqlite3_mutex]) -> NoneType:
+        return self.lib.get_function[fn (type_of(pMutex)) -> NoneType]("sqlite3_mutex_leave")(pMutex)
 
-    fn sqlite3_mutex_held(self, pMutex: UnsafePointer[sqlite3_mutex]) -> c_int:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_mutex]) -> c_int]("sqlite3_mutex_held")(pMutex)
+    fn sqlite3_mutex_held(self, pMutex: UnsafeMutPointer[sqlite3_mutex]) -> c_int:
+        return self.lib.get_function[fn (type_of(pMutex)) -> c_int]("sqlite3_mutex_held")(pMutex)
 
-    fn sqlite3_mutex_notheld(self, pMutex: UnsafePointer[sqlite3_mutex]) -> c_int:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_mutex]) -> c_int]("sqlite3_mutex_notheld")(pMutex)
+    fn sqlite3_mutex_notheld(self, pMutex: UnsafeMutPointer[sqlite3_mutex]) -> c_int:
+        return self.lib.get_function[fn (type_of(pMutex)) -> c_int]("sqlite3_mutex_notheld")(pMutex)
 
-    fn sqlite3_db_mutex(self, db: UnsafePointer[sqlite3_connection]) -> UnsafePointer[sqlite3_mutex]:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_connection]) -> UnsafePointer[sqlite3_mutex]](
+    fn sqlite3_db_mutex(self, db: UnsafeMutPointer[sqlite3_connection]) -> UnsafeMutPointer[sqlite3_mutex]:
+        return self.lib.get_function[fn (type_of(db)) -> UnsafeMutPointer[sqlite3_mutex]](
             "sqlite3_db_mutex"
         )(db)
 
     fn sqlite3_file_control(
         self,
-        db: UnsafePointer[sqlite3_connection],
-        zDbName: UnsafePointer[c_char, mut=False],
+        db: UnsafeMutPointer[sqlite3_connection],
+        zDbName: UnsafeImmutPointer[c_char],
         op: c_int,
-        pArg: OpaquePointer,
+        pArg: OpaqueMutPointer,
     ) -> c_int:
         return self.lib.get_function[
             fn (
-                UnsafePointer[sqlite3_connection], /,
-                zDbName: UnsafePointer[c_char, mut=False],
-                op: c_int,
-                pArg: OpaquePointer,
+                type_of(db), type_of(zDbName), type_of(op), type_of(pArg)
             ) -> c_int
         ]("sqlite3_file_control")(db, zDbName, op, pArg)
 
@@ -2797,327 +2367,309 @@ struct _sqlite3(Movable):
     fn sqlite3_keyword_count(self) -> c_int:
         return self.lib.get_function[fn () -> c_int]("sqlite3_keyword_count")()
 
-    fn sqlite3_keyword_name(
-        self, idx: c_int, pzName: UnsafePointer[UnsafePointer[c_char, mut=False]], pnName: UnsafePointer[c_int]
+    fn sqlite3_keyword_name[origin: ImmutOrigin](
+        self, idx: c_int, pzName: UnsafeMutPointer[UnsafeImmutPointer[c_char, origin]], pnName: UnsafeMutPointer[c_int]
     ) -> c_int:
         return self.lib.get_function[
-            fn (c_int, UnsafePointer[UnsafePointer[c_char, mut=False]], UnsafePointer[c_int]) -> c_int
+            fn (type_of(idx), type_of(pzName), type_of(pnName)) -> c_int
         ]("sqlite3_keyword_name")(idx, pzName, pnName)
 
-    fn sqlite3_keyword_check(self, zName: UnsafePointer[c_char, mut=False], nName: c_int) -> c_int:
-        return self.lib.get_function[fn (UnsafePointer[c_char, mut=False], c_int) -> c_int]("sqlite3_keyword_check")(
+    fn sqlite3_keyword_check(self, zName: UnsafeImmutPointer[c_char], nName: c_int) -> c_int:
+        return self.lib.get_function[fn (type_of(zName), type_of(nName)) -> c_int]("sqlite3_keyword_check")(
             zName, nName
         )
 
-    fn sqlite3_str_new(self, db: UnsafePointer[sqlite3_connection]) -> UnsafePointer[sqlite3_str]:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_connection]) -> UnsafePointer[sqlite3_str]](
+    fn sqlite3_str_new(self, db: UnsafeMutPointer[sqlite3_connection]) -> UnsafeMutPointer[sqlite3_str]:
+        return self.lib.get_function[fn (type_of(db)) -> UnsafeMutPointer[sqlite3_str]](
             "sqlite3_str_new"
         )(db)
 
-    fn sqlite3_str_finish(self, pStr: UnsafePointer[sqlite3_str]) -> UnsafePointer[c_char]:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_str]) -> UnsafePointer[c_char]]("sqlite3_str_finish")(
+    fn sqlite3_str_finish(self, pStr: UnsafeMutPointer[sqlite3_str]) -> UnsafeMutPointer[c_char]:
+        return self.lib.get_function[fn (type_of(pStr)) -> UnsafeMutPointer[c_char]]("sqlite3_str_finish")(
             pStr
         )
 
     fn sqlite3_str_appendf(
-        self, pStr: UnsafePointer[sqlite3_str], zFormat: UnsafePointer[c_char, mut=False]
+        self, pStr: UnsafeMutPointer[sqlite3_str], zFormat: UnsafeImmutPointer[c_char]
     ) -> NoneType:
         return self.lib.get_function[
-            fn (UnsafePointer[sqlite3_str], /, zFormat: UnsafePointer[c_char, mut=False]) -> NoneType
+            fn (type_of(pStr), type_of(zFormat)) -> NoneType
         ]("sqlite3_str_appendf")(pStr, zFormat)
 
     fn sqlite3_str_append(
-        self, pStr: UnsafePointer[sqlite3_str], zIn: UnsafePointer[c_char, mut=False], N: c_int
+        self, pStr: UnsafeMutPointer[sqlite3_str], zIn: UnsafeImmutPointer[c_char], N: c_int
     ) -> NoneType:
         return self.lib.get_function[
-            fn (UnsafePointer[sqlite3_str], /, zIn: UnsafePointer[c_char, mut=False], N: c_int) -> NoneType
+            fn (type_of(pStr), type_of(zIn), type_of(N)) -> NoneType
         ]("sqlite3_str_append")(pStr, zIn, N)
 
-    fn sqlite3_str_appendall(self, pStr: UnsafePointer[sqlite3_str], zIn: UnsafePointer[c_char, mut=False]) -> NoneType:
+    fn sqlite3_str_appendall(self, pStr: UnsafeMutPointer[sqlite3_str], zIn: UnsafeImmutPointer[c_char]) -> NoneType:
         return self.lib.get_function[
-            fn (UnsafePointer[sqlite3_str], /, zIn: UnsafePointer[c_char, mut=False]) -> NoneType
+            fn (type_of(pStr), type_of(zIn)) -> NoneType
         ]("sqlite3_str_appendall")(pStr, zIn)
 
-    fn sqlite3_str_appendchar(self, pStr: UnsafePointer[sqlite3_str], N: c_int, C: Int8) -> NoneType:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_str], /, N: c_int, C: Int8) -> NoneType](
+    fn sqlite3_str_appendchar(self, pStr: UnsafeMutPointer[sqlite3_str], N: c_int, C: Int8) -> NoneType:
+        return self.lib.get_function[fn (type_of(pStr), type_of(N), type_of(C)) -> NoneType](
             "sqlite3_str_appendchar"
         )(pStr, N, C)
 
-    fn sqlite3_str_reset(self, pStr: UnsafePointer[sqlite3_str]) -> NoneType:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_str]) -> NoneType]("sqlite3_str_reset")(pStr)
+    fn sqlite3_str_reset(self, pStr: UnsafeMutPointer[sqlite3_str]) -> NoneType:
+        return self.lib.get_function[fn (type_of(pStr)) -> NoneType]("sqlite3_str_reset")(pStr)
 
-    fn sqlite3_str_errcode(self, pStr: UnsafePointer[sqlite3_str]) -> c_int:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_str]) -> c_int]("sqlite3_str_errcode")(pStr)
+    fn sqlite3_str_errcode(self, pStr: UnsafeMutPointer[sqlite3_str]) -> c_int:
+        return self.lib.get_function[fn (type_of(pStr)) -> c_int]("sqlite3_str_errcode")(pStr)
 
-    fn sqlite3_str_length(self, pStr: UnsafePointer[sqlite3_str]) -> c_int:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_str]) -> c_int]("sqlite3_str_length")(pStr)
+    fn sqlite3_str_length(self, pStr: UnsafeMutPointer[sqlite3_str]) -> c_int:
+        return self.lib.get_function[fn (type_of(pStr)) -> c_int]("sqlite3_str_length")(pStr)
 
-    fn sqlite3_str_value(self, pStr: UnsafePointer[sqlite3_str]) -> UnsafePointer[c_char]:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_str]) -> UnsafePointer[c_char]]("sqlite3_str_value")(
+    fn sqlite3_str_value(self, pStr: UnsafeMutPointer[sqlite3_str]) -> UnsafeMutPointer[c_char]:
+        return self.lib.get_function[fn (type_of(pStr)) -> UnsafeMutPointer[c_char]]("sqlite3_str_value")(
             pStr
         )
 
     fn sqlite3_backup_init(
         self,
-        pDest: UnsafePointer[sqlite3_connection],
-        zDestName: UnsafePointer[c_char, mut=False],
-        pSource: UnsafePointer[sqlite3_connection],
-        zSourceName: UnsafePointer[c_char, mut=False],
-    ) -> UnsafePointer[sqlite3_backup]:
+        pDest: UnsafeMutPointer[sqlite3_connection],
+        zDestName: UnsafeImmutPointer[c_char],
+        pSource: UnsafeMutPointer[sqlite3_connection],
+        zSourceName: UnsafeImmutPointer[c_char],
+    ) -> UnsafeMutPointer[sqlite3_backup]:
         return self.lib.get_function[
             fn (
-                pDest: UnsafePointer[sqlite3_connection],
-                zDestName: UnsafePointer[c_char, mut=False],
-                pSource: UnsafePointer[sqlite3_connection],
-                zSourceName: UnsafePointer[c_char, mut=False],
-            ) -> UnsafePointer[sqlite3_backup]
+                type_of(pDest), type_of(zDestName), type_of(pSource), type_of(zSourceName)
+            ) -> UnsafeMutPointer[sqlite3_backup]
         ]("sqlite3_backup_init")(pDest, zDestName, pSource, zSourceName)
 
-    fn sqlite3_backup_step(self, p: UnsafePointer[sqlite3_backup], nPage: c_int) -> c_int:
-        return self.lib.get_function[fn (p: UnsafePointer[sqlite3_backup], nPage: c_int) -> c_int](
+    fn sqlite3_backup_step(self, p: UnsafeMutPointer[sqlite3_backup], nPage: c_int) -> c_int:
+        return self.lib.get_function[fn (type_of(p), type_of(nPage)) -> c_int](
             "sqlite3_backup_step"
         )(p, nPage)
 
-    fn sqlite3_backup_finish(self, p: UnsafePointer[sqlite3_backup]) -> c_int:
-        return self.lib.get_function[fn (p: UnsafePointer[sqlite3_backup]) -> c_int]("sqlite3_backup_finish")(p)
+    fn sqlite3_backup_finish(self, p: UnsafeMutPointer[sqlite3_backup]) -> c_int:
+        return self.lib.get_function[fn (type_of(p)) -> c_int]("sqlite3_backup_finish")(p)
 
-    fn sqlite3_backup_remaining(self, p: UnsafePointer[sqlite3_backup]) -> c_int:
-        return self.lib.get_function[fn (p: UnsafePointer[sqlite3_backup]) -> c_int]("sqlite3_backup_remaining")(p)
+    fn sqlite3_backup_remaining(self, p: UnsafeMutPointer[sqlite3_backup]) -> c_int:
+        return self.lib.get_function[fn (type_of(p)) -> c_int]("sqlite3_backup_remaining")(p)
 
-    fn sqlite3_backup_pagecount(self, p: UnsafePointer[sqlite3_backup]) -> c_int:
-        return self.lib.get_function[fn (p: UnsafePointer[sqlite3_backup]) -> c_int]("sqlite3_backup_pagecount")(p)
+    fn sqlite3_backup_pagecount(self, p: UnsafeMutPointer[sqlite3_backup]) -> c_int:
+        return self.lib.get_function[fn (type_of(p)) -> c_int]("sqlite3_backup_pagecount")(p)
 
-    fn sqlite3_unlock_notify(
+    fn sqlite3_unlock_notify[origin: MutOrigin, origin2: MutOrigin](
         self,
-        pBlocked: UnsafePointer[sqlite3_connection],
-        xNotify: fn (UnsafePointer[OpaquePointer], c_int) -> NoneType,
-        pNotifyArg: OpaquePointer,
+        pBlocked: UnsafeMutPointer[sqlite3_connection],
+        xNotify: fn (UnsafeMutPointer[OpaqueMutPointer[origin], origin2], c_int) -> NoneType,
+        pNotifyArg: OpaqueMutPointer,
     ) -> c_int:
         return self.lib.get_function[
             fn (
-                pBlocked: UnsafePointer[sqlite3_connection],
-                xNotify: fn (UnsafePointer[OpaquePointer], c_int) -> NoneType,
-                pNotifyArg: OpaquePointer,
+                type_of(pBlocked), type_of(xNotify), type_of(pNotifyArg)
             ) -> c_int
         ]("sqlite3_unlock_notify")(pBlocked, xNotify, pNotifyArg)
 
-    fn sqlite3_stricmp(self, str1: UnsafePointer[c_char, mut=False], str2: UnsafePointer[c_char, mut=False]) -> c_int:
-        return self.lib.get_function[fn (UnsafePointer[c_char, mut=False], UnsafePointer[c_char, mut=False]) -> c_int](
+    fn sqlite3_stricmp(self, str1: UnsafeImmutPointer[c_char], str2: UnsafeImmutPointer[c_char]) -> c_int:
+        return self.lib.get_function[fn (type_of(str1), type_of(str2)) -> c_int](
             "sqlite3_stricmp"
         )(str1, str2)
 
     fn sqlite3_strnicmp(
-        self, str1: UnsafePointer[c_char, mut=False], str2: UnsafePointer[c_char, mut=False], n: c_int
+        self, str1: UnsafeImmutPointer[c_char], str2: UnsafeImmutPointer[c_char], n: c_int
     ) -> c_int:
         return self.lib.get_function[
-            fn (UnsafePointer[c_char, mut=False], UnsafePointer[c_char, mut=False], c_int) -> c_int
+            fn (type_of(str1), type_of(str2), type_of(n)) -> c_int
         ]("sqlite3_strnicmp")(str1, str2, n)
 
-    fn sqlite3_strglob(self, zGlob: UnsafePointer[c_char, mut=False], zStr: UnsafePointer[c_char, mut=False]) -> c_int:
+    fn sqlite3_strglob(self, zGlob: UnsafeImmutPointer[c_char], zStr: UnsafeImmutPointer[c_char]) -> c_int:
         return self.lib.get_function[
-            fn (zGlob: UnsafePointer[c_char, mut=False], zStr: UnsafePointer[c_char, mut=False]) -> c_int
+            fn (type_of(zGlob), type_of(zStr)) -> c_int
         ]("sqlite3_strglob")(zGlob, zStr)
 
     fn sqlite3_strlike(
-        self, zGlob: UnsafePointer[c_char, mut=False], zStr: UnsafePointer[c_char, mut=False], cEsc: UInt32
+        self, zGlob: UnsafeImmutPointer[c_char], zStr: UnsafeImmutPointer[c_char], cEsc: c_uint
     ) -> c_int:
         return self.lib.get_function[
-            fn (zGlob: UnsafePointer[c_char, mut=False], zStr: UnsafePointer[c_char, mut=False], cEsc: UInt32) -> c_int
+            fn (type_of(zGlob), type_of(zStr), type_of(cEsc)) -> c_int
         ]("sqlite3_strlike")(zGlob, zStr, cEsc)
 
-    fn sqlite3_log(self, iErrCode: c_int, zFormat: UnsafePointer[c_char, mut=False]) -> NoneType:
-        return self.lib.get_function[fn (iErrCode: c_int, zFormat: UnsafePointer[c_char, mut=False]) -> NoneType](
+    fn sqlite3_log(self, iErrCode: c_int, zFormat: UnsafeImmutPointer[c_char]) -> NoneType:
+        return self.lib.get_function[fn (type_of(iErrCode), type_of(zFormat)) -> NoneType](
             "sqlite3_log"
         )(iErrCode, zFormat)
 
-    fn sqlite3_wal_hook(
+    fn sqlite3_wal_hook[origin: MutOrigin, origin2: MutOrigin, origin3: MutOrigin](
         self,
-        db: UnsafePointer[sqlite3_connection],
-        xCallback: fn (OpaquePointer, UnsafePointer[sqlite3_connection], UnsafePointer[c_char], c_int) -> c_int,
-        pArg: OpaquePointer,
-    ) -> OpaquePointer:
+        db: UnsafeMutPointer[sqlite3_connection],
+        xCallback: fn (OpaqueMutPointer[origin], UnsafeMutPointer[sqlite3_connection, origin2], UnsafeMutPointer[c_char, origin3], c_int) -> c_int,
+        pArg: OpaqueMutPointer[origin2],
+    ) -> OpaqueMutPointer:
         return self.lib.get_function[
             fn (
-                UnsafePointer[sqlite3_connection],
-                fn (OpaquePointer, UnsafePointer[sqlite3_connection], UnsafePointer[c_char], c_int) -> c_int,
-                OpaquePointer,
-            ) -> OpaquePointer
+                type_of(db), type_of(xCallback), type_of(pArg)
+            ) -> OpaqueMutPointer
         ]("sqlite3_wal_hook")(db, xCallback, pArg)
 
-    fn sqlite3_wal_autocheckpoint(self, db: UnsafePointer[sqlite3_connection], N: c_int) -> c_int:
-        return self.lib.get_function[fn (db: UnsafePointer[sqlite3_connection], N: c_int) -> c_int](
+    fn sqlite3_wal_autocheckpoint(self, db: UnsafeMutPointer[sqlite3_connection], N: c_int) -> c_int:
+        return self.lib.get_function[fn (type_of(db), type_of(N)) -> c_int](
             "sqlite3_wal_autocheckpoint"
         )(db, N)
 
     fn sqlite3_wal_checkpoint(
-        self, db: UnsafePointer[sqlite3_connection], zDb: UnsafePointer[c_char, mut=False]
+        self, db: UnsafeMutPointer[sqlite3_connection], zDb: UnsafeImmutPointer[c_char]
     ) -> c_int:
         return self.lib.get_function[
-            fn (db: UnsafePointer[sqlite3_connection], zDb: UnsafePointer[c_char, mut=False]) -> c_int
+            fn (type_of(db), type_of(zDb)) -> c_int
         ]("sqlite3_wal_checkpoint")(db, zDb)
 
     fn sqlite3_wal_checkpoint_v2(
         self,
-        db: UnsafePointer[sqlite3_connection],
-        zDb: UnsafePointer[c_char, mut=False],
+        db: UnsafeMutPointer[sqlite3_connection],
+        zDb: UnsafeImmutPointer[c_char],
         eMode: c_int,
-        pnLog: UnsafePointer[c_int],
-        pnCkpt: UnsafePointer[c_int],
+        pnLog: UnsafeMutPointer[c_int],
+        pnCkpt: UnsafeMutPointer[c_int],
     ) -> c_int:
         return self.lib.get_function[
             fn (
-                db: UnsafePointer[sqlite3_connection],
-                zDb: UnsafePointer[c_char, mut=False],
-                eMode: c_int,
-                pnLog: UnsafePointer[c_int],
-                pnCkpt: UnsafePointer[c_int],
+                type_of(db),
+                type_of(zDb),
+                type_of(eMode),
+                type_of(pnLog),
+                type_of(pnCkpt),
             ) -> c_int
         ]("sqlite3_wal_checkpoint_v2")(db, zDb, eMode, pnLog, pnCkpt)
 
-    fn sqlite3_vtab_config(self, db: UnsafePointer[sqlite3_connection], op: c_int) -> c_int:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_connection], /, op: c_int) -> c_int](
+    fn sqlite3_vtab_config(self, db: UnsafeMutPointer[sqlite3_connection], op: c_int) -> c_int:
+        return self.lib.get_function[fn (type_of(db), /, op: c_int) -> c_int](
             "sqlite3_vtab_config"
         )(db, op)
 
-    fn sqlite3_vtab_on_conflict(self, db: UnsafePointer[sqlite3_connection]) -> c_int:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_connection]) -> c_int]("sqlite3_vtab_on_conflict")(db)
+    fn sqlite3_vtab_on_conflict(self, db: UnsafeMutPointer[sqlite3_connection]) -> c_int:
+        return self.lib.get_function[fn (type_of(db)) -> c_int]("sqlite3_vtab_on_conflict")(db)
 
-    fn sqlite3_vtab_nochange(self, ctx: UnsafePointer[sqlite3_context]) -> c_int:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_context]) -> c_int]("sqlite3_vtab_nochange")(ctx)
+    fn sqlite3_vtab_nochange(self, ctx: UnsafeMutPointer[sqlite3_context]) -> c_int:
+        return self.lib.get_function[fn (type_of(ctx)) -> c_int]("sqlite3_vtab_nochange")(ctx)
 
     fn sqlite3_vtab_collation(
-        self, pIdxInfo: UnsafePointer[sqlite3_index_info], iCons: c_int
-    ) -> UnsafePointer[c_char, mut=False]:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_index_info], c_int) -> UnsafePointer[c_char, mut=False]](
+        self, pIdxInfo: UnsafeMutPointer[sqlite3_index_info], iCons: c_int
+    ) -> UnsafeImmutPointer[c_char]:
+        return self.lib.get_function[fn (type_of(pIdxInfo), type_of(iCons)) -> UnsafeImmutPointer[c_char]](
             "sqlite3_vtab_collation"
         )(pIdxInfo, iCons)
 
-    fn sqlite3_vtab_distinct(self, pIdxInfo: UnsafePointer[sqlite3_index_info]) -> c_int:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_index_info]) -> c_int]("sqlite3_vtab_distinct")(pIdxInfo)
+    fn sqlite3_vtab_distinct(self, pIdxInfo: UnsafeMutPointer[sqlite3_index_info]) -> c_int:
+        return self.lib.get_function[fn (type_of(pIdxInfo)) -> c_int]("sqlite3_vtab_distinct")(pIdxInfo)
 
-    fn sqlite3_vtab_in(self, pIdxInfo: UnsafePointer[sqlite3_index_info], iCons: c_int, bHandle: c_int) -> c_int:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_index_info], /, iCons: c_int, bHandle: c_int) -> c_int](
+    fn sqlite3_vtab_in(self, pIdxInfo: UnsafeMutPointer[sqlite3_index_info], iCons: c_int, bHandle: c_int) -> c_int:
+        return self.lib.get_function[fn (type_of(pIdxInfo), type_of(iCons), type_of(bHandle)) -> c_int](
             "sqlite3_vtab_in"
         )(pIdxInfo, iCons, bHandle)
 
-    fn sqlite3_vtab_in_first(
-        self, pVal: UnsafePointer[sqlite3_value], ppOut: UnsafePointer[UnsafePointer[sqlite3_value]]
+    fn sqlite3_vtab_in_first[origin: MutOrigin](
+        self, pVal: UnsafeMutPointer[sqlite3_value], ppOut: UnsafeMutPointer[UnsafeMutPointer[sqlite3_value, origin]]
     ) -> c_int:
         return self.lib.get_function[
-            fn (pVal: UnsafePointer[sqlite3_value], ppOut: UnsafePointer[UnsafePointer[sqlite3_value]]) -> c_int
+            fn (type_of(pVal), type_of(ppOut)) -> c_int
         ]("sqlite3_vtab_in_first")(pVal, ppOut)
 
-    fn sqlite3_vtab_in_next(
-        self, pVal: UnsafePointer[sqlite3_value], ppOut: UnsafePointer[UnsafePointer[sqlite3_value]]
+    fn sqlite3_vtab_in_next[origin: MutOrigin](
+        self, pVal: UnsafeMutPointer[sqlite3_value], ppOut: UnsafeMutPointer[UnsafeMutPointer[sqlite3_value, origin]]
     ) -> c_int:
         return self.lib.get_function[
-            fn (pVal: UnsafePointer[sqlite3_value], ppOut: UnsafePointer[UnsafePointer[sqlite3_value]]) -> c_int
+            fn (type_of(pVal), type_of(ppOut)) -> c_int
         ]("sqlite3_vtab_in_next")(pVal, ppOut)
 
-    fn sqlite3_vtab_rhs_value(
+    fn sqlite3_vtab_rhs_value[origin: MutOrigin](
         self,
-        pIdxInfo: UnsafePointer[sqlite3_index_info],
+        pIdxInfo: UnsafeMutPointer[sqlite3_index_info],
         iCons: c_int,
-        ppVal: UnsafePointer[UnsafePointer[sqlite3_value]],
+        ppVal: UnsafeMutPointer[UnsafeMutPointer[sqlite3_value, origin]],
     ) -> c_int:
         return self.lib.get_function[
             fn (
-                UnsafePointer[sqlite3_index_info], c_int, /, ppVal: UnsafePointer[UnsafePointer[sqlite3_value]]
+                type_of(pIdxInfo), type_of(iCons), type_of(ppVal)
             ) -> c_int
         ]("sqlite3_vtab_rhs_value")(pIdxInfo, iCons, ppVal)
 
     fn sqlite3_stmt_scanstatus_v2(
-        self, pStmt: UnsafePointer[sqlite3_stmt], idx: c_int, iScanStatusOp: c_int, flags: c_int, pOut: OpaquePointer
+        self, pStmt: UnsafeMutPointer[sqlite3_stmt], idx: c_int, iScanStatusOp: c_int, flags: c_int, pOut: OpaqueMutPointer
     ) -> c_int:
         return self.lib.get_function[
             fn (
-                pStmt: UnsafePointer[sqlite3_stmt], idx: c_int, iScanStatusOp: c_int, flags: c_int, pOut: OpaquePointer
+                type_of(pStmt), type_of(idx), type_of(iScanStatusOp), type_of(flags), type_of(pOut)
             ) -> c_int
         ]("sqlite3_stmt_scanstatus_v2")(pStmt, idx, iScanStatusOp, flags, pOut)
 
-    fn sqlite3_db_cacheflush(self, db: UnsafePointer[sqlite3_connection]) -> c_int:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_connection]) -> c_int]("sqlite3_db_cacheflush")(db)
+    fn sqlite3_db_cacheflush(self, db: UnsafeMutPointer[sqlite3_connection]) -> c_int:
+        return self.lib.get_function[fn (type_of(db)) -> c_int]("sqlite3_db_cacheflush")(db)
 
-    fn sqlite3_system_errno(self, db: UnsafePointer[sqlite3_connection]) -> c_int:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_connection]) -> c_int]("sqlite3_system_errno")(db)
+    fn sqlite3_system_errno(self, db: UnsafeMutPointer[sqlite3_connection]) -> c_int:
+        return self.lib.get_function[fn (type_of(db)) -> c_int]("sqlite3_system_errno")(db)
 
-    fn sqlite3_snapshot_get(
+    fn sqlite3_snapshot_get[origin: MutOrigin](
         self,
-        db: UnsafePointer[sqlite3_connection],
-        zSchema: UnsafePointer[c_char, mut=False],
-        ppSnapshot: UnsafePointer[UnsafePointer[sqlite3_snapshot]],
+        db: UnsafeMutPointer[sqlite3_connection],
+        zSchema: UnsafeImmutPointer[c_char],
+        ppSnapshot: UnsafeMutPointer[UnsafeMutPointer[sqlite3_snapshot, origin]],
     ) -> c_int:
         return self.lib.get_function[
             fn (
-                db: UnsafePointer[sqlite3_connection],
-                zSchema: UnsafePointer[c_char, mut=False],
-                ppSnapshot: UnsafePointer[UnsafePointer[sqlite3_snapshot]],
+                type_of(db), type_of(zSchema), type_of(ppSnapshot)
             ) -> c_int
         ]("sqlite3_snapshot_get")(db, zSchema, ppSnapshot)
 
     fn sqlite3_snapshot_open(
         self,
-        db: UnsafePointer[sqlite3_connection],
-        zSchema: UnsafePointer[c_char, mut=False],
-        pSnapshot: UnsafePointer[sqlite3_snapshot],
+        db: UnsafeMutPointer[sqlite3_connection],
+        zSchema: UnsafeImmutPointer[c_char],
+        pSnapshot: UnsafeMutPointer[sqlite3_snapshot],
     ) -> c_int:
         return self.lib.get_function[
-            fn (
-                db: UnsafePointer[sqlite3_connection],
-                zSchema: UnsafePointer[c_char, mut=False],
-                pSnapshot: UnsafePointer[sqlite3_snapshot],
-            ) -> c_int
+            fn (type_of(db), type_of(zSchema), type_of(pSnapshot)) -> c_int
         ]("sqlite3_snapshot_open")(db, zSchema, pSnapshot)
 
-    fn sqlite3_snapshot_free(self, pSnapshot: UnsafePointer[sqlite3_snapshot]) -> NoneType:
-        return self.lib.get_function[fn (UnsafePointer[sqlite3_snapshot]) -> NoneType]("sqlite3_snapshot_free")(
+    fn sqlite3_snapshot_free(self, pSnapshot: UnsafeMutPointer[sqlite3_snapshot]) -> NoneType:
+        return self.lib.get_function[fn (type_of(pSnapshot)) -> NoneType]("sqlite3_snapshot_free")(
             pSnapshot
         )
 
-    fn sqlite3_snapshot_cmp(self, p1: UnsafePointer[sqlite3_snapshot], p2: UnsafePointer[sqlite3_snapshot]) -> c_int:
+    fn sqlite3_snapshot_cmp(self, p1: UnsafeMutPointer[sqlite3_snapshot], p2: UnsafeMutPointer[sqlite3_snapshot]) -> c_int:
         return self.lib.get_function[
-            fn (p1: UnsafePointer[sqlite3_snapshot], p2: UnsafePointer[sqlite3_snapshot]) -> c_int
+            fn (type_of(p1), type_of(p2)) -> c_int
         ]("sqlite3_snapshot_cmp")(p1, p2)
 
     fn sqlite3_snapshot_recover(
-        self, db: UnsafePointer[sqlite3_connection], zDb: UnsafePointer[c_char, mut=False]
+        self, db: UnsafeMutPointer[sqlite3_connection], zDb: UnsafeImmutPointer[c_char]
     ) -> c_int:
         return self.lib.get_function[
-            fn (db: UnsafePointer[sqlite3_connection], zDb: UnsafePointer[c_char, mut=False]) -> c_int
+            fn (type_of(db), type_of(zDb)) -> c_int
         ]("sqlite3_snapshot_recover")(db, zDb)
 
     fn sqlite3_serialize(
         self,
-        db: UnsafePointer[sqlite3_connection],
-        zSchema: UnsafePointer[c_char, mut=False],
-        piSize: UnsafePointer[sqlite3_int64],
-        mFlags: UInt32,
-    ) -> UnsafePointer[UInt8]:
+        db: UnsafeMutPointer[sqlite3_connection],
+        zSchema: UnsafeImmutPointer[c_char],
+        piSize: UnsafeMutPointer[sqlite3_int64],
+        mFlags: c_uint,
+    ) -> UnsafeMutPointer[c_uchar]:
         return self.lib.get_function[
-            fn (
-                db: UnsafePointer[sqlite3_connection],
-                zSchema: UnsafePointer[c_char, mut=False],
-                piSize: UnsafePointer[sqlite3_int64],
-                mFlags: UInt32,
-            ) -> UnsafePointer[UInt8]
+            fn (type_of(db), type_of(zSchema), type_of(piSize), type_of(mFlags)) -> UnsafeMutPointer[c_uchar]
         ]("sqlite3_serialize")(db, zSchema, piSize, mFlags)
 
     fn sqlite3_deserialize(
         self,
-        db: UnsafePointer[sqlite3_connection],
-        zSchema: UnsafePointer[c_char, mut=False],
-        pData: UnsafePointer[UInt8],
+        db: UnsafeMutPointer[sqlite3_connection],
+        zSchema: UnsafeImmutPointer[c_char],
+        pData: UnsafeMutPointer[c_uchar],
         szDb: sqlite3_int64,
         szBuf: sqlite3_int64,
-        mFlags: UInt32,
+        mFlags: c_uint,
     ) -> c_int:
         return self.lib.get_function[
             fn (
-                db: UnsafePointer[sqlite3_connection],
-                zSchema: UnsafePointer[c_char, mut=False],
-                pData: UnsafePointer[UInt8],
-                szDb: sqlite3_int64,
-                szBuf: sqlite3_int64,
-                mFlags: UInt32,
+                type_of(db),
+                type_of(zSchema),
+                type_of(pData),
+                type_of(szDb),
+                type_of(szBuf),
+                type_of(mFlags),
             ) -> c_int
         ]("sqlite3_deserialize")(db, zSchema, pData, szDb, szBuf, mFlags)

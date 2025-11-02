@@ -81,7 +81,7 @@ struct RawStatement(Boolable, Movable):
 
         return Span[Byte, origin_of(self)](
             ptr=ptr,
-            length=UInt(length),
+            length=Int(length),
         )
 
     fn column_type(self, idx: UInt) -> Int32:

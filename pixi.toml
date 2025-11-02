@@ -33,7 +33,7 @@ version = "25.6.0"
 backend = { name = "pixi-build-mojo", version = "*" }
 
 [dependencies]
-mojo = ">=0.25.6.0,<0.25.8.0"
+mojo = "*"
 sqlite = ">=3.50.4"
 
 [package.build-dependencies]
