@@ -1,6 +1,6 @@
 from slight.c.api import get_sqlite3_handle
 from slight.result import SQLite3Result
-from slight.c.types import sqlite3_stmt, ResultDestructorFn
+from slight.c.types import sqlite3_stmt, ResultDestructorFn, SQLITE_UTF8
 from slight.c.sqlite_string import SQLiteMallocString
 
 
@@ -153,16 +153,16 @@ struct RawStatement(Boolable, Movable):
         """
         return get_sqlite3_handle()[].bind_double(self.stmt, Int32(index), value)
 
-    fn bind_text(self, index: UInt, var value: String, destructor: ResultDestructorFn) -> SQLite3Result:
+    fn bind_text(self, index: UInt, var value: String, destructor_callback: ResultDestructorFn) -> SQLite3Result:
         """Binds a text string value to the specified parameter.
 
         Args:
             index: The 1-based index of the parameter to bind.
             value: The string value to bind.
-            destructor: The destructor function to call when SQLite is done with the text.
+            destructor_callback: The destructor function to call when SQLite is done with the text.
         """
-        return get_sqlite3_handle()[].bind_text(
-            self.stmt, Int32(index), value.unsafe_cstr_ptr(), len(value), destructor
+        return get_sqlite3_handle()[].bind_text64(
+            self.stmt, Int32(index), value, len(value), SQLITE_UTF8, destructor_callback
         )
 
     fn sql(self) -> Optional[StringSlice[ImmutableAnyOrigin]]:

@@ -1,7 +1,7 @@
 from memory import OpaquePointer
 from utils import StaticTuple
 
-from sys.ffi import c_char
+from sys.ffi import c_char, c_int
 
 
 alias SQLITE_INTEGER: Int32 = 1
@@ -10,11 +10,11 @@ alias SQLITE_BLOB: Int32 = 4
 alias SQLITE_NULL: Int32 = 5
 alias SQLITE_TEXT: Int32 = 3
 alias SQLITE3_TEXT: Int32 = 3
-alias SQLITE_UTF8: Int32 = 1
-alias SQLITE_UTF16LE: Int32 = 2
-alias SQLITE_UTF16BE: Int32 = 3
-alias SQLITE_UTF16: Int32 = 4
-alias SQLITE_ANY: Int32 = 5
+alias SQLITE_UTF8: UInt8 = 1
+alias SQLITE_UTF16LE: UInt8 = 2
+alias SQLITE_UTF16BE: UInt8 = 3
+alias SQLITE_UTF16: UInt8 = 4
+alias SQLITE_ANY: UInt8 = 5
 
 
 struct sqlite3_connection(Movable):
@@ -49,9 +49,7 @@ struct sqlite3_file(Movable):
     pass
 
 
-alias sqlite3_syscall_ptr = fn () -> NoneType
-
-alias ResultDestructorFn = fn (OpaquePointer) -> NoneType
+alias ResultDestructorFn = fn (ExternalMutPointer[NoneType]) -> NoneType
 """Constants Defining Special Destructor Behavior
 These are special values for the destructor that is passed in as the
 final argument to routines like [sqlite3_result_blob()].  ^If the destructor
@@ -62,6 +60,24 @@ the near future and that SQLite should make its own private copy of
 the content before returning.
 The typedef is necessary to work around problems in certain
 C++ compilers."""
+
+alias ExecCallbackFn = fn[argv_origin: MutOrigin, col_name_origin: MutOrigin] (
+    data: OpaqueMutPointer,
+    argc: Int32,
+    argv: UnsafeMutPointer[UnsafeMutPointer[c_char, argv_origin]],
+    azColName: UnsafeMutPointer[UnsafeMutPointer[c_char, col_name_origin]],
+) -> c_int
+
+alias AuthCallbackFn = fn[
+    origin: MutOrigin, origin2: ImmutOrigin, origin3: ImmutOrigin, origin4: ImmutOrigin, origin5: ImmutOrigin
+] (
+    OpaqueMutPointer[origin],
+    c_int,
+    UnsafeImmutPointer[c_char, origin2],
+    UnsafeImmutPointer[c_char, origin3],
+    UnsafeImmutPointer[c_char, origin4],
+    UnsafeImmutPointer[c_char, origin5],
+) -> c_int
 
 
 # To use these as destructors for libsqlite3, first create a pointer to the value.

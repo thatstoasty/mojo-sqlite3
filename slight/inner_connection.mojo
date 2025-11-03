@@ -34,7 +34,7 @@ struct InnerConnection(Movable):
         """
         self.db = ExternalMutPointer[sqlite3_connection]()
         var result = get_sqlite3_handle()[].open_v2(
-            path.unsafe_cstr_ptr(), UnsafePointerV2(to=self.db), flags.value, ExternalImmutPointer[c_char]()
+            path, UnsafePointerV2(to=self.db), flags.value, None
         )
         if result != SQLite3Result.SQLITE_OK:
             raise Error("Could not open database: ", materialize[RESULT_MESSAGES]()[result.value])

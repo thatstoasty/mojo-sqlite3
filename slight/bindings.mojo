@@ -1,4 +1,4 @@
-from slight.c.raw_bindings import _sqlite3, ExecCallbackFn
+from slight.c.raw_bindings import _sqlite3
 from slight.result import SQLite3Result
 from pathlib import Path
 from sys.ffi import DLHandle, c_char, c_int, c_uint, c_uchar
@@ -10,6 +10,7 @@ from slight.c.types import (
     sqlite3_connection,
     sqlite3_context,
     ResultDestructorFn,
+    AuthCallbackFn,
     sqlite3_file,
     sqlite3_index_info,
     sqlite3_snapshot,
@@ -319,92 +320,88 @@ struct sqlite3:
         return self.lib.sqlite3_is_interrupted(db)
 
     fn busy_handler[
-        origin: MutOrigin
+        cb_origin: MutOrigin,
+        arg_origin: MutOrigin,
     ](
         self,
         db: ExternalMutPointer[sqlite3_connection],
-        callback: fn (OpaqueMutPointer[origin], c_int) -> c_int,
-        arg: OpaqueMutPointer,
+        callback: fn (OpaqueMutPointer[cb_origin], c_int) -> c_int,
+        arg: OpaqueMutPointer[arg_origin],
     ) -> SQLite3Result:
         return self.lib.sqlite3_busy_handler(db, callback, arg)
 
     fn busy_timeout(self, db: ExternalMutPointer[sqlite3_connection], ms: c_int) -> SQLite3Result:
         return self.lib.sqlite3_busy_timeout(db, ms)
 
-    fn malloc64(self, size: UInt64) -> OpaqueMutPointer:
+    fn malloc64(self, size: UInt64) -> ExternalMutPointer[NoneType]:
         return self.lib.sqlite3_malloc64(size)
 
-    fn free(self, ptr: OpaqueMutPointer):
+    fn free[origin: MutOrigin](self, ptr: OpaqueMutPointer[origin]):
         self.lib.sqlite3_free(ptr)
 
-    fn msize(self, ptr: OpaqueMutPointer) -> UInt64:
+    fn msize[origin: MutOrigin](self, ptr: OpaqueMutPointer[origin]) -> UInt64:
         return self.lib.sqlite3_msize(ptr)
 
     fn set_authorizer[
-        origin: MutOrigin, origin2: ImmutOrigin, origin3: ImmutOrigin, origin4: ImmutOrigin, origin5: ImmutOrigin
+        origin: MutOrigin, origin2: ImmutOrigin, origin3: ImmutOrigin, origin4: ImmutOrigin, origin5: ImmutOrigin,
+        auth_callback: AuthCallbackFn, userdata_origin: MutOrigin,
     ](
         self,
         db: ExternalMutPointer[sqlite3_connection],
-        xAuth: fn (
-            OpaqueMutPointer[origin],
-            c_int,
-            UnsafeImmutPointer[c_char, origin2],
-            UnsafeImmutPointer[c_char, origin3],
-            UnsafeImmutPointer[c_char, origin4],
-            UnsafeImmutPointer[c_char, origin5],
-        ) -> c_int,
-        pUserData: OpaqueMutPointer,
+        pUserData: OpaqueMutPointer[userdata_origin],
     ) -> SQLite3Result:
-        return self.lib.sqlite3_set_authorizer(db, xAuth, pUserData)
+        return self.lib.sqlite3_set_authorizer[origin, origin2, origin3, origin4, origin5, auth_callback](db, pUserData)
 
     fn trace[
-        origin: MutOrigin, origin2: ImmutOrigin
+        origin: MutOrigin,
+        origin2: ImmutOrigin,
+        arg_origin: MutOrigin
     ](
         self,
         db: ExternalMutPointer[sqlite3_connection],
         xTrace: fn (OpaqueMutPointer[origin], UnsafeImmutPointer[c_char, origin2]) -> NoneType,
-        pArg: OpaqueMutPointer,
-    ) -> OpaqueMutPointer:
+        pArg: OpaqueMutPointer[arg_origin],
+    ) -> ExternalMutPointer[NoneType]:
         return self.lib.sqlite3_trace(db, xTrace, pArg)
 
     fn profile[
-        origin: MutOrigin, origin2: ImmutOrigin
+        origin: MutOrigin, origin2: ImmutOrigin, arg_origin: MutOrigin
     ](
         self,
         db: ExternalMutPointer[sqlite3_connection],
         xProfile: fn (OpaqueMutPointer[origin], UnsafeImmutPointer[c_char, origin2], UInt64) -> NoneType,
-        pArg: OpaqueMutPointer,
-    ) -> OpaqueMutPointer:
+        pArg: OpaqueMutPointer[arg_origin],
+    ) -> ExternalMutPointer[NoneType]:
         return self.lib.sqlite3_profile(db, xProfile, pArg)
 
     fn trace_v2[
-        origin: MutOrigin, origin2: MutOrigin, origin3: MutOrigin
+        origin: MutOrigin, origin2: MutOrigin, origin3: MutOrigin, ctx_origin: MutOrigin
     ](
         self,
         db: ExternalMutPointer[sqlite3_connection],
         uMask: UInt32,
         xCallback: fn (UInt32, OpaqueMutPointer[origin], OpaqueMutPointer[origin2], OpaqueMutPointer[origin3]) -> c_int,
-        pCtx: OpaqueMutPointer,
+        pCtx: OpaqueMutPointer[ctx_origin],
     ) -> SQLite3Result:
         return self.lib.sqlite3_trace_v2(db, uMask, xCallback, pCtx)
 
     fn progress_handler[
-        origin: MutOrigin
+        origin: MutOrigin, arg_origin: MutOrigin
     ](
         self,
         db: ExternalMutPointer[sqlite3_connection],
         nOps: c_int,
         xProgress: fn (OpaqueMutPointer[origin]) -> c_int,
-        pArg: OpaqueMutPointer,
+        pArg: OpaqueMutPointer[arg_origin],
     ):
         self.lib.sqlite3_progress_handler(db, nOps, xProgress, pArg)
 
     fn open_v2(
         self,
-        filename: UnsafeImmutPointer[c_char],
+        mut filename: String,
         ppDb: UnsafeMutPointer[ExternalMutPointer[sqlite3_connection]],
         flags: c_int,
-        zVfs: UnsafeImmutPointer[c_char],
+        var zVfs: Optional[String],
     ) -> SQLite3Result:
         """Open A Database Connection with specified flags and VFS.
 
@@ -433,7 +430,8 @@ struct sqlite3:
         Returns:
             SQLITE_OK on success, or an error code on failure.
         """
-        return self.lib.sqlite3_open_v2(filename, ppDb, flags, zVfs)
+        var vfs_ptr = zVfs.value().unsafe_cstr_ptr() if zVfs else ExternalImmutPointer[c_char]()
+        return self.lib.sqlite3_open_v2(filename.unsafe_cstr_ptr(), ppDb, flags, vfs_ptr)
 
     fn errcode(self, db: ExternalMutPointer[sqlite3_connection]) -> SQLite3Result:
         """Retrieve the most recent error code for a database connection.
@@ -555,14 +553,14 @@ struct sqlite3:
         return self.lib.sqlite3_limit(db, id, newVal)
 
     fn prepare_v2[
-        origin: MutOrigin, origin2: ImmutOrigin
+        origin: ImmutOrigin
     ](
         self,
         db: ExternalMutPointer[sqlite3_connection],
-        zSql: UnsafeImmutPointer[c_char],
+        mut zSql: String,
         nByte: c_int,
-        ppStmt: UnsafeMutPointer[UnsafeMutPointer[sqlite3_stmt, origin]],
-        pzTail: UnsafeMutPointer[UnsafeImmutPointer[c_char, origin2]],
+        mut ppStmt: ExternalMutPointer[sqlite3_stmt],
+        mut pzTail: UnsafeImmutPointer[c_char, origin],
     ) -> SQLite3Result:
         """Compile an SQL statement into a prepared statement object (Version 2).
 
@@ -582,7 +580,7 @@ struct sqlite3:
         Returns:
             SQLITE_OK on success, or an error code on failure.
         """
-        return self.lib.sqlite3_prepare_v2(db, zSql, nByte, ppStmt, pzTail)
+        return self.lib.sqlite3_prepare_v2(db, zSql.unsafe_cstr_ptr(), nByte, UnsafePointerV2(to=ppStmt), UnsafePointerV2(to=pzTail))
 
     # TODO: When unsafe_cstr_ptr returns an UnsafePointerV2, update pzTail type
     fn prepare_v3[
@@ -598,7 +596,7 @@ struct sqlite3:
     ) -> SQLite3Result:
         return self.lib.sqlite3_prepare_v3(db, zSql, nByte, prepFlags, UnsafePointerV2(to=ppStmt), pzTail)
 
-    fn sql(self, pStmt: UnsafeMutPointer[sqlite3_stmt]) -> StringSlice[ImmutableAnyOrigin]:
+    fn sql(self, pStmt: ExternalMutPointer[sqlite3_stmt]) -> StringSlice[ImmutableAnyOrigin]:
         """Retrieve the SQL text of a prepared statement.
 
         Returns a pointer to a copy of the UTF-8 SQL text used to create the
@@ -613,7 +611,7 @@ struct sqlite3:
         """
         return StringSlice(unsafe_from_utf8_ptr=self.lib.sqlite3_sql(pStmt))
 
-    fn expanded_sql(self, pStmt: UnsafeMutPointer[sqlite3_stmt]) -> SQLiteMallocString:
+    fn expanded_sql(self, pStmt: ExternalMutPointer[sqlite3_stmt]) -> SQLiteMallocString:
         """Retrieve SQL with bound parameters expanded.
 
         Returns a pointer to a UTF-8 string containing the SQL text of the
@@ -628,7 +626,7 @@ struct sqlite3:
         """
         return SQLiteMallocString(self.lib.sqlite3_expanded_sql(pStmt))
 
-    fn stmt_readonly(self, pStmt: UnsafeMutPointer[sqlite3_stmt]) -> SQLite3Result:
+    fn stmt_readonly(self, pStmt: ExternalMutPointer[sqlite3_stmt]) -> SQLite3Result:
         """Determine if a prepared statement is read-only.
 
         Returns true (non-zero) if and only if the prepared statement makes
@@ -644,25 +642,25 @@ struct sqlite3:
         """
         return self.lib.sqlite3_stmt_readonly(pStmt)
 
-    fn stmt_isexplain(self, pStmt: UnsafeMutPointer[sqlite3_stmt]) -> c_int:
+    fn stmt_isexplain(self, pStmt: ExternalMutPointer[sqlite3_stmt]) -> c_int:
         return self.lib.sqlite3_stmt_isexplain(pStmt)
 
-    fn stmt_busy(self, pStmt: UnsafeMutPointer[sqlite3_stmt]) -> SQLite3Result:
+    fn stmt_busy(self, pStmt: ExternalMutPointer[sqlite3_stmt]) -> SQLite3Result:
         return self.lib.sqlite3_stmt_busy(pStmt)
 
     fn bind_blob64[
-        origin: MutOrigin
+        value_origin: ImmutOrigin,
     ](
         self,
-        pStmt: UnsafeMutPointer[sqlite3_stmt],
+        pStmt: ExternalMutPointer[sqlite3_stmt],
         idx: c_int,
-        value: OpaqueImmutPointer,
+        value: OpaqueImmutPointer[value_origin],
         n: UInt64,
-        destructor: fn (OpaqueMutPointer[origin]) -> NoneType,
+        destructor_callback: ResultDestructorFn,
     ) -> SQLite3Result:
-        return self.lib.sqlite3_bind_blob64(pStmt, idx, value, n, destructor)
+        return self.lib.sqlite3_bind_blob64(pStmt, idx, value, n, destructor_callback)
 
-    fn bind_double(self, pStmt: UnsafeMutPointer[sqlite3_stmt], idx: c_int, value: Float64) -> SQLite3Result:
+    fn bind_double(self, pStmt: ExternalMutPointer[sqlite3_stmt], idx: c_int, value: Float64) -> SQLite3Result:
         """Binding Values To Prepared Statements - REAL.
 
         This routine binds a floating point value to a parameter in a prepared statement.
@@ -678,10 +676,10 @@ struct sqlite3:
         """
         return self.lib.sqlite3_bind_double(pStmt, idx, value)
 
-    fn bind_int64(self, pStmt: UnsafeMutPointer[sqlite3_stmt], idx: c_int, value: Int64) -> SQLite3Result:
+    fn bind_int64(self, pStmt: ExternalMutPointer[sqlite3_stmt], idx: c_int, value: Int64) -> SQLite3Result:
         return self.lib.sqlite3_bind_int64(pStmt, idx, value)
 
-    fn bind_null(self, pStmt: UnsafeMutPointer[sqlite3_stmt], idx: c_int) -> SQLite3Result:
+    fn bind_null(self, pStmt: ExternalMutPointer[sqlite3_stmt], idx: c_int) -> SQLite3Result:
         """Binding Values To Prepared Statements - NULL.
 
         This routine binds a NULL value to a parameter in a prepared statement.
@@ -696,35 +694,33 @@ struct sqlite3:
         """
         return self.lib.sqlite3_bind_null(pStmt, idx)
 
-    fn bind_text64[
-        origin: MutOrigin
-    ](
+    fn bind_text64(
         self,
-        pStmt: UnsafeMutPointer[sqlite3_stmt],
+        pStmt: ExternalMutPointer[sqlite3_stmt],
         idx: c_int,
-        value: UnsafeImmutPointer[c_char],
+        mut value: String,
         n: UInt64,
-        destructor: fn (OpaqueMutPointer[origin]) -> NoneType,
         encoding: UInt8,
+        destructor_callback: ResultDestructorFn,
     ) -> SQLite3Result:
-        return self.lib.sqlite3_bind_text64(pStmt, idx, value, n, destructor, encoding)
+        return self.lib.sqlite3_bind_text64(pStmt, idx, value.unsafe_cstr_ptr(), n, encoding, destructor_callback)
 
     fn bind_pointer[
-        origin: MutOrigin
+        value_origin: MutOrigin,
     ](
         self,
-        pStmt: UnsafeMutPointer[sqlite3_stmt],
+        pStmt: ExternalMutPointer[sqlite3_stmt],
         idx: c_int,
-        value: OpaqueMutPointer,
-        typeStr: UnsafeImmutPointer[c_char],
-        destructor: fn (OpaqueMutPointer[origin]) -> NoneType,
+        value: OpaqueMutPointer[value_origin],
+        mut typeStr: String,
+        destructor_callback: ResultDestructorFn,
     ) -> SQLite3Result:
-        return self.lib.sqlite3_bind_pointer(pStmt, idx, value, typeStr, destructor)
+        return self.lib.sqlite3_bind_pointer[](pStmt, idx, value, typeStr.unsafe_cstr_ptr(), destructor_callback)
 
-    fn bind_zeroblob(self, pStmt: UnsafeMutPointer[sqlite3_stmt], idx: c_int, n: c_int) -> SQLite3Result:
+    fn bind_zeroblob(self, pStmt: ExternalMutPointer[sqlite3_stmt], idx: c_int, n: c_int) -> SQLite3Result:
         return self.lib.sqlite3_bind_zeroblob(pStmt, idx, n)
 
-    fn bind_parameter_count(self, pStmt: UnsafeMutPointer[sqlite3_stmt]) -> c_int:
+    fn bind_parameter_count(self, pStmt: ExternalMutPointer[sqlite3_stmt]) -> c_int:
         """Return the number of parameters in a prepared statement.
 
         This function returns the number of SQL parameters in the prepared
@@ -739,13 +735,13 @@ struct sqlite3:
         """
         return self.lib.sqlite3_bind_parameter_count(pStmt)
 
-    fn bind_parameter_name(self, pStmt: UnsafeMutPointer[sqlite3_stmt], idx: c_int) -> StringSlice[ImmutableAnyOrigin]:
+    fn bind_parameter_name(self, pStmt: ExternalMutPointer[sqlite3_stmt], idx: c_int) -> StringSlice[ImmutableAnyOrigin]:
         return StringSlice(unsafe_from_utf8_ptr=self.lib.sqlite3_bind_parameter_name(pStmt, idx))
 
-    fn bind_parameter_index(self, pStmt: UnsafeMutPointer[sqlite3_stmt], mut zName: String) -> c_int:
+    fn bind_parameter_index(self, pStmt: ExternalMutPointer[sqlite3_stmt], mut zName: String) -> c_int:
         return self.lib.sqlite3_bind_parameter_index(pStmt, zName.unsafe_cstr_ptr())
 
-    fn clear_bindings(self, pStmt: UnsafeMutPointer[sqlite3_stmt]) -> SQLite3Result:
+    fn clear_bindings(self, pStmt: ExternalMutPointer[sqlite3_stmt]) -> SQLite3Result:
         """Reset All Bindings On A Prepared Statement.
 
         Contrary to the intuition of many, sqlite3_reset() does not reset
@@ -760,7 +756,7 @@ struct sqlite3:
         """
         return self.lib.sqlite3_clear_bindings(pStmt)
 
-    fn column_count(self, pStmt: UnsafeMutPointer[sqlite3_stmt]) -> c_int:
+    fn column_count(self, pStmt: ExternalMutPointer[sqlite3_stmt]) -> c_int:
         """Return the number of columns in a result set.
 
         This function returns the number of columns in the result set returned
@@ -775,7 +771,7 @@ struct sqlite3:
         """
         return self.lib.sqlite3_column_count(pStmt)
 
-    fn column_name(self, pStmt: UnsafeMutPointer[sqlite3_stmt], N: c_int) -> Optional[StringSlice[ImmutableAnyOrigin]]:
+    fn column_name(self, pStmt: ExternalMutPointer[sqlite3_stmt], N: c_int) -> Optional[StringSlice[ImmutableAnyOrigin]]:
         var ptr = self.lib.sqlite3_column_name(pStmt, N)
         if not ptr:
             return None
@@ -783,7 +779,7 @@ struct sqlite3:
         return StringSlice(unsafe_from_utf8_ptr=ptr).get_immutable()
 
     fn column_database_name(
-        self, pStmt: UnsafeMutPointer[sqlite3_stmt], idx: c_int
+        self, pStmt: ExternalMutPointer[sqlite3_stmt], idx: c_int
     ) -> Optional[StringSlice[ImmutableAnyOrigin]]:
         var ptr = self.lib.sqlite3_column_database_name(pStmt, idx)
         if not ptr:
@@ -792,7 +788,7 @@ struct sqlite3:
         return StringSlice(unsafe_from_utf8_ptr=ptr).get_immutable()
 
     fn column_table_name(
-        self, pStmt: UnsafeMutPointer[sqlite3_stmt], idx: c_int
+        self, pStmt: ExternalMutPointer[sqlite3_stmt], idx: c_int
     ) -> Optional[StringSlice[ImmutableAnyOrigin]]:
         var ptr = self.lib.sqlite3_column_table_name(pStmt, idx)
         if not ptr:
@@ -801,7 +797,7 @@ struct sqlite3:
         return StringSlice(unsafe_from_utf8_ptr=ptr).get_immutable()
 
     fn column_origin_name(
-        self, pStmt: UnsafeMutPointer[sqlite3_stmt], idx: c_int
+        self, pStmt: ExternalMutPointer[sqlite3_stmt], idx: c_int
     ) -> Optional[StringSlice[ImmutableAnyOrigin]]:
         var ptr = self.lib.sqlite3_column_origin_name(pStmt, idx)
         if not ptr:
@@ -810,7 +806,7 @@ struct sqlite3:
         return StringSlice(unsafe_from_utf8_ptr=ptr).get_immutable()
 
     fn column_decltype(
-        self, pStmt: UnsafeMutPointer[sqlite3_stmt], idx: c_int
+        self, pStmt: ExternalMutPointer[sqlite3_stmt], idx: c_int
     ) -> Optional[StringSlice[ImmutableAnyOrigin]]:
         var ptr = self.lib.sqlite3_column_decltype(pStmt, idx)
         if not ptr:
@@ -818,7 +814,7 @@ struct sqlite3:
 
         return StringSlice(unsafe_from_utf8_ptr=ptr).get_immutable()
 
-    fn step(self, pStmt: UnsafeMutPointer[sqlite3_stmt]) -> SQLite3Result:
+    fn step(self, pStmt: ExternalMutPointer[sqlite3_stmt]) -> SQLite3Result:
         """Execute a prepared statement.
 
         This function is used to evaluate a prepared statement that has been
@@ -838,7 +834,7 @@ struct sqlite3:
         """
         return self.lib.sqlite3_step(pStmt)
 
-    fn column_blob(self, pStmt: UnsafeMutPointer[sqlite3_stmt], iCol: c_int) -> ExternalMutPointer[NoneType]:
+    fn column_blob(self, pStmt: ExternalMutPointer[sqlite3_stmt], iCol: c_int) -> ExternalMutPointer[NoneType]:
         """Result Values From A Query - BLOB.
 
         These routines return information about a single column of the current
@@ -854,7 +850,7 @@ struct sqlite3:
         """
         return self.lib.sqlite3_column_blob(pStmt, iCol)
 
-    fn column_double(self, pStmt: UnsafeMutPointer[sqlite3_stmt], iCol: c_int) -> Float64:
+    fn column_double(self, pStmt: ExternalMutPointer[sqlite3_stmt], iCol: c_int) -> Float64:
         """Result Values From A Query - REAL.
 
         This routine returns the value of the specified column as a floating
@@ -870,10 +866,10 @@ struct sqlite3:
         """
         return self.lib.sqlite3_column_double(pStmt, iCol)
 
-    fn column_int64(self, pStmt: UnsafeMutPointer[sqlite3_stmt], iCol: c_int) -> Int64:
+    fn column_int64(self, pStmt: ExternalMutPointer[sqlite3_stmt], iCol: c_int) -> Int64:
         return self.lib.sqlite3_column_int64(pStmt, iCol)
 
-    fn column_text(self, pStmt: UnsafeMutPointer[sqlite3_stmt], iCol: c_int) -> ExternalImmutPointer[c_uchar]:
+    fn column_text(self, pStmt: ExternalMutPointer[sqlite3_stmt], iCol: c_int) -> ExternalImmutPointer[c_uchar]:
         """Retrieve column data as UTF-8 text.
 
         This function returns the value of the specified column as a UTF-8
@@ -889,16 +885,16 @@ struct sqlite3:
         """
         return self.lib.sqlite3_column_text(pStmt, iCol)
 
-    fn column_value(self, pStmt: UnsafeMutPointer[sqlite3_stmt], iCol: c_int) -> ExternalMutPointer[sqlite3_value]:
+    fn column_value(self, pStmt: ExternalMutPointer[sqlite3_stmt], iCol: c_int) -> ExternalMutPointer[sqlite3_value]:
         return self.lib.sqlite3_column_value(pStmt, iCol)
 
-    fn column_bytes(self, pStmt: UnsafeMutPointer[sqlite3_stmt], iCol: c_int) -> c_int:
+    fn column_bytes(self, pStmt: ExternalMutPointer[sqlite3_stmt], iCol: c_int) -> c_int:
         return self.lib.sqlite3_column_bytes(pStmt, iCol)
 
-    fn column_type(self, pStmt: UnsafeMutPointer[sqlite3_stmt], iCol: c_int) -> c_int:
+    fn column_type(self, pStmt: ExternalMutPointer[sqlite3_stmt], iCol: c_int) -> c_int:
         return self.lib.sqlite3_column_type(pStmt, iCol)
 
-    fn finalize(self, pStmt: UnsafeMutPointer[sqlite3_stmt]) -> SQLite3Result:
+    fn finalize(self, pStmt: ExternalMutPointer[sqlite3_stmt]) -> SQLite3Result:
         """Finalize a prepared statement.
 
         This function is used to delete a prepared statement. If the most recent
@@ -914,7 +910,7 @@ struct sqlite3:
         """
         return self.lib.sqlite3_finalize(pStmt)
 
-    fn reset(self, pStmt: UnsafeMutPointer[sqlite3_stmt]) -> SQLite3Result:
+    fn reset(self, pStmt: ExternalMutPointer[sqlite3_stmt]) -> SQLite3Result:
         """Reset a prepared statement.
 
         This function resets a prepared statement back to its initial state,
@@ -932,81 +928,78 @@ struct sqlite3:
         return self.lib.sqlite3_reset(pStmt)
 
     fn create_function_v2[
-        origin: MutOrigin,
-        origin2: MutOrigin,
-        origin3: MutOrigin,
-        origin4: MutOrigin,
-        origin5: MutOrigin,
-        origin6: MutOrigin,
-        origin7: MutOrigin,
-        origin8: MutOrigin,
+        app_origin: MutOrigin,
+        fn_origin: MutOrigin,
+        step_origin: MutOrigin,
     ](
         self,
         db: ExternalMutPointer[sqlite3_connection],
-        zFunctionName: UnsafeImmutPointer[c_char],
+        mut zFunctionName: String,
         nArg: c_int,
         eTextRep: c_int,
-        pApp: OpaqueMutPointer,
+        pApp: OpaqueMutPointer[app_origin],
         xFunc: fn (
-            UnsafeMutPointer[sqlite3_context, origin],
+            ExternalMutPointer[sqlite3_context],
             c_int,
-            UnsafeMutPointer[UnsafeMutPointer[sqlite3_value, origin2], origin3],
+            UnsafeMutPointer[ExternalMutPointer[sqlite3_value], fn_origin],
         ) -> NoneType,
         xStep: fn (
-            UnsafeMutPointer[sqlite3_context, origin4],
+            ExternalMutPointer[sqlite3_context],
             c_int,
-            UnsafeMutPointer[UnsafeMutPointer[sqlite3_value, origin5], origin6],
+            UnsafeMutPointer[ExternalMutPointer[sqlite3_value], step_origin],
         ) -> NoneType,
-        xFinal: fn (UnsafeMutPointer[sqlite3_context, origin7]) -> NoneType,
-        xDestroy: fn (OpaqueMutPointer[origin8]) -> NoneType,
+        xFinal: fn (ExternalMutPointer[sqlite3_context]) -> NoneType,
+        destructor_callback: ResultDestructorFn,
     ) -> SQLite3Result:
-        return self.lib.sqlite3_create_function_v2(
-            db, zFunctionName, nArg, eTextRep, pApp, xFunc, xStep, xFinal, xDestroy
+        return self.lib.sqlite3_create_function_v2[
+            app_origin=app_origin,
+            fn_origin=fn_origin,
+            step_origin=step_origin,
+        ](
+            db, zFunctionName.unsafe_cstr_ptr(), nArg, eTextRep, pApp, xFunc, xStep, xFinal, destructor_callback
         )
 
     fn create_window_function[
-        origin: MutOrigin,
-        origin2: MutOrigin,
-        origin3: MutOrigin,
-        origin4: MutOrigin,
-        origin5: MutOrigin,
-        origin6: MutOrigin,
-        origin7: MutOrigin,
-        origin8: MutOrigin,
-        origin9: MutOrigin,
+        app_origin: MutOrigin,
+        step_origin: MutOrigin,
+        inverse_origin: MutOrigin,
     ](
         self,
         db: ExternalMutPointer[sqlite3_connection],
-        zFunctionName: UnsafeImmutPointer[c_char],
+        mut zFunctionName: String,
         nArg: c_int,
         eTextRep: c_int,
-        pApp: OpaqueMutPointer,
+        pApp: OpaqueMutPointer[app_origin],
         xStep: fn (
-            UnsafeMutPointer[sqlite3_context, origin],
+            ExternalMutPointer[sqlite3_context],
             c_int,
-            UnsafeMutPointer[UnsafeMutPointer[sqlite3_value, origin2], origin3],
+            UnsafeMutPointer[ExternalMutPointer[sqlite3_value], step_origin],
         ) -> NoneType,
-        xFinal: fn (UnsafeMutPointer[sqlite3_context, origin4]) -> NoneType,
-        xValue: fn (UnsafeMutPointer[sqlite3_context, origin5]) -> NoneType,
+        xFinal: fn (ExternalMutPointer[sqlite3_context]) -> NoneType,
+        xValue: fn (ExternalMutPointer[sqlite3_context]) -> NoneType,
         xInverse: fn (
-            UnsafeMutPointer[sqlite3_context, origin6],
+            ExternalMutPointer[sqlite3_context],
             c_int,
-            UnsafeMutPointer[UnsafeMutPointer[sqlite3_value, origin7], origin8],
+            UnsafeMutPointer[ExternalMutPointer[sqlite3_value], inverse_origin],
         ) -> NoneType,
-        xDestroy: fn (OpaqueMutPointer[origin9]) -> NoneType,
+        destructor_callback: ResultDestructorFn,
     ) -> SQLite3Result:
-        return self.lib.sqlite3_create_window_function(
-            db, zFunctionName, nArg, eTextRep, pApp, xStep, xFinal, xValue, xInverse, xDestroy
+        return self.lib.sqlite3_create_window_function[
+            app_origin=app_origin,
+            step_origin=step_origin,
+            inverse_origin=inverse_origin,
+        ](
+            db, zFunctionName.unsafe_cstr_ptr(), nArg, eTextRep, pApp, xStep, xFinal, xValue, xInverse, destructor_callback
         )
 
-    fn aggregate_count(self, ctx: UnsafeMutPointer[sqlite3_context]) -> SQLite3Result:
+    fn aggregate_count(self, ctx: ExternalMutPointer[sqlite3_context]) -> SQLite3Result:
         return self.lib.sqlite3_aggregate_count(ctx)
 
-    fn expired(self, pStmt: UnsafeMutPointer[sqlite3_stmt]) -> SQLite3Result:
+    fn expired(self, pStmt: ExternalMutPointer[sqlite3_stmt]) -> SQLite3Result:
         return self.lib.sqlite3_expired(pStmt)
 
     fn transfer_bindings(
-        self, fromStmt: UnsafeMutPointer[sqlite3_stmt], toStmt: UnsafeMutPointer[sqlite3_stmt]
+        self, fromStmt: ExternalMutPointer[sqlite3_stmt], toStmt: ExternalMutPointer[sqlite3_stmt]
     ) -> SQLite3Result:
         return self.lib.sqlite3_transfer_bindings(fromStmt, toStmt)
 
@@ -1026,148 +1019,156 @@ struct sqlite3:
     ) -> SQLite3Result:
         return self.lib.sqlite3_memory_alarm(callback, arg, n)
 
-    fn value_blob(self, value: UnsafeMutPointer[sqlite3_value]) -> OpaqueMutPointer:
+    fn value_blob(self, value: ExternalMutPointer[sqlite3_value]) -> ExternalMutPointer[NoneType]:
         return self.lib.sqlite3_value_blob(value)
 
-    fn value_double(self, value: UnsafeMutPointer[sqlite3_value]) -> Float64:
+    fn value_double(self, value: ExternalMutPointer[sqlite3_value]) -> Float64:
         return self.lib.sqlite3_value_double(value)
 
-    fn value_int64(self, value: UnsafeMutPointer[sqlite3_value]) -> Int64:
+    fn value_int64(self, value: ExternalMutPointer[sqlite3_value]) -> Int64:
         return self.lib.sqlite3_value_int64(value)
 
     fn value_pointer(
-        self, value: UnsafeMutPointer[sqlite3_value], typeStr: UnsafeImmutPointer[c_char]
-    ) -> OpaqueMutPointer:
-        return self.lib.sqlite3_value_pointer(value, typeStr)
+        self, value: ExternalMutPointer[sqlite3_value], mut typeStr: String
+    ) -> ExternalMutPointer[NoneType]:
+        return self.lib.sqlite3_value_pointer(value, typeStr.unsafe_cstr_ptr())
 
-    fn value_text(self, value: UnsafeMutPointer[sqlite3_value]) -> StringSlice[ImmutableAnyOrigin]:
+    fn value_text(self, value: ExternalMutPointer[sqlite3_value]) -> StringSlice[ImmutableAnyOrigin]:
         return StringSlice(unsafe_from_utf8_ptr=self.lib.sqlite3_value_text(value))
 
-    fn value_bytes(self, value: UnsafeMutPointer[sqlite3_value]) -> SQLite3Result:
+    fn value_bytes(self, value: ExternalMutPointer[sqlite3_value]) -> SQLite3Result:
         return self.lib.sqlite3_value_bytes(value)
 
-    fn value_type(self, value: UnsafeMutPointer[sqlite3_value]) -> SQLite3Result:
+    fn value_type(self, value: ExternalMutPointer[sqlite3_value]) -> SQLite3Result:
         return self.lib.sqlite3_value_type(value)
 
-    fn value_nochange(self, value: UnsafeMutPointer[sqlite3_value]) -> SQLite3Result:
+    fn value_nochange(self, value: ExternalMutPointer[sqlite3_value]) -> SQLite3Result:
         return self.lib.sqlite3_value_nochange(value)
 
-    fn value_subtype(self, value: UnsafeMutPointer[sqlite3_value]) -> UInt32:
+    fn value_subtype(self, value: ExternalMutPointer[sqlite3_value]) -> UInt32:
         return self.lib.sqlite3_value_subtype(value)
 
-    fn aggregate_context(self, ctx: UnsafeMutPointer[sqlite3_context], nBytes: c_int) -> OpaqueMutPointer:
+    fn aggregate_context(self, ctx: ExternalMutPointer[sqlite3_context], nBytes: c_int) -> ExternalMutPointer[NoneType]:
         return self.lib.sqlite3_aggregate_context(ctx, nBytes)
 
-    fn user_data(self, ctx: UnsafeMutPointer[sqlite3_context]) -> OpaqueMutPointer:
+    fn user_data(self, ctx: ExternalMutPointer[sqlite3_context]) -> ExternalMutPointer[NoneType]:
         return self.lib.sqlite3_user_data(ctx)
 
-    fn context_db_handle(self, ctx: UnsafeMutPointer[sqlite3_context]) -> ExternalMutPointer[sqlite3_connection]:
+    fn context_db_handle(self, ctx: ExternalMutPointer[sqlite3_context]) -> ExternalMutPointer[sqlite3_connection]:
         return self.lib.sqlite3_context_db_handle(ctx)
 
-    fn get_auxdata(self, ctx: UnsafeMutPointer[sqlite3_context], N: c_int) -> OpaqueMutPointer:
+    fn get_auxdata(self, ctx: ExternalMutPointer[sqlite3_context], N: c_int) -> ExternalMutPointer[NoneType]:
         return self.lib.sqlite3_get_auxdata(ctx, N)
 
     fn set_auxdata[
-        origin: MutOrigin
+        data_origin: MutOrigin,
     ](
         self,
-        ctx: UnsafeMutPointer[sqlite3_context],
+        ctx: ExternalMutPointer[sqlite3_context],
         N: c_int,
-        data: OpaqueMutPointer,
-        destructor: fn (OpaqueMutPointer[origin]) -> NoneType,
+        data: OpaqueMutPointer[data_origin],
+        destructor_callback: ResultDestructorFn,
     ):
-        self.lib.sqlite3_set_auxdata(ctx, N, data, destructor)
+        self.lib.sqlite3_set_auxdata(ctx, N, data, destructor_callback)
 
     fn result_blob64[
-        origin: MutOrigin
+        origin: MutOrigin,
     ](
         self,
-        ctx: UnsafeMutPointer[sqlite3_context],
-        value: OpaqueMutPointer,
+        ctx: ExternalMutPointer[sqlite3_context],
+        value: OpaqueMutPointer[origin],
         n: UInt64,
-        destructor: fn (OpaqueMutPointer[origin]) -> NoneType,
+        destructor_callback: ResultDestructorFn,
     ):
-        self.lib.sqlite3_result_blob64(ctx, value, n, destructor)
+        self.lib.sqlite3_result_blob64(ctx, value, n, destructor_callback)
 
-    fn result_double(self, ctx: UnsafeMutPointer[sqlite3_context], value: Float64):
+    fn result_double(self, ctx: ExternalMutPointer[sqlite3_context], value: Float64):
         self.lib.sqlite3_result_double(ctx, value)
 
-    fn result_error(self, ctx: UnsafeMutPointer[sqlite3_context], msg: UnsafeImmutPointer[c_char], n: c_int):
-        self.lib.sqlite3_result_error(ctx, msg, n)
+    fn result_error(self, ctx: ExternalMutPointer[sqlite3_context], mut msg: String, n: c_int):
+        self.lib.sqlite3_result_error(ctx, msg.unsafe_cstr_ptr(), n)
 
-    fn result_error_toobig(self, ctx: UnsafeMutPointer[sqlite3_context]):
+    fn result_error_toobig(self, ctx: ExternalMutPointer[sqlite3_context]):
         self.lib.sqlite3_result_error_toobig(ctx)
 
-    fn result_error_nomem(self, ctx: UnsafeMutPointer[sqlite3_context]):
+    fn result_error_nomem(self, ctx: ExternalMutPointer[sqlite3_context]):
         self.lib.sqlite3_result_error_nomem(ctx)
 
-    fn result_error_code(self, ctx: UnsafeMutPointer[sqlite3_context], code: c_int):
+    fn result_error_code(self, ctx: ExternalMutPointer[sqlite3_context], code: c_int):
         self.lib.sqlite3_result_error_code(ctx, code)
 
-    fn result_int64(self, ctx: UnsafeMutPointer[sqlite3_context], value: Int64):
+    fn result_int64(self, ctx: ExternalMutPointer[sqlite3_context], value: Int64):
         self.lib.sqlite3_result_int64(ctx, value)
 
-    fn result_null(self, ctx: UnsafeMutPointer[sqlite3_context]):
+    fn result_null(self, ctx: ExternalMutPointer[sqlite3_context]):
         self.lib.sqlite3_result_null(ctx)
 
     fn result_text64[
-        origin: MutOrigin
+        value_origin: ImmutOrigin,
     ](
         self,
-        ctx: UnsafeMutPointer[sqlite3_context],
-        value: UnsafeImmutPointer[c_char],
+        ctx: ExternalMutPointer[sqlite3_context],
+        mut value: String,
         n: UInt64,
-        destructor: fn (OpaqueMutPointer[origin]) -> NoneType,
         encoding: UInt8,
+        destructor_callback: ResultDestructorFn,
     ):
-        self.lib.sqlite3_result_text64(ctx, value, n, destructor, encoding)
+        self.lib.sqlite3_result_text64(ctx, value.unsafe_cstr_ptr(), n, encoding, destructor_callback)
 
-    fn result_value(self, ctx: UnsafeMutPointer[sqlite3_context], value: UnsafeMutPointer[sqlite3_value]):
+    fn result_value(self, ctx: ExternalMutPointer[sqlite3_context], value: ExternalMutPointer[sqlite3_value]):
         self.lib.sqlite3_result_value(ctx, value)
 
     fn result_pointer[
-        origin: MutOrigin
+        ptr_origin: MutOrigin,
     ](
         self,
-        ctx: UnsafeMutPointer[sqlite3_context],
-        ptr: OpaqueMutPointer,
-        typeStr: UnsafeImmutPointer[c_char],
-        destructor: fn (OpaqueMutPointer[origin]) -> NoneType,
+        ctx: ExternalMutPointer[sqlite3_context],
+        ptr: OpaqueMutPointer[ptr_origin],
+        mut typeStr: String,
+        destructor_callback: ResultDestructorFn,
     ):
-        self.lib.sqlite3_result_pointer(ctx, ptr, typeStr, destructor)
+        self.lib.sqlite3_result_pointer(ctx, ptr, typeStr.unsafe_cstr_ptr(), destructor_callback)
 
-    fn result_zeroblob(self, ctx: UnsafeMutPointer[sqlite3_context], n: c_int):
+    fn result_zeroblob(self, ctx: ExternalMutPointer[sqlite3_context], n: c_int):
         self.lib.sqlite3_result_zeroblob(ctx, n)
 
-    fn result_subtype(self, ctx: UnsafeMutPointer[sqlite3_context], subtype: UInt32):
+    fn result_subtype(self, ctx: ExternalMutPointer[sqlite3_context], subtype: UInt32):
         self.lib.sqlite3_result_subtype(ctx, subtype)
 
     fn create_collation_v2[
-        origin: MutOrigin, origin2: ImmutOrigin, origin3: ImmutOrigin, origin4: MutOrigin
+        arg_origin: MutOrigin,
+        compare_origin: MutOrigin,
+        compare_origin2: ImmutOrigin,
+        compare_origin3: ImmutOrigin,
     ](
         self,
         db: ExternalMutPointer[sqlite3_connection],
-        zName: UnsafeImmutPointer[c_char],
+        mut zName: String,
         eTextRep: c_int,
-        pArg: OpaqueMutPointer,
+        pArg: OpaqueMutPointer[arg_origin],
         xCompare: fn (
-            OpaqueMutPointer[origin], c_int, OpaqueImmutPointer[origin2], c_int, OpaqueImmutPointer[origin3]
+            OpaqueMutPointer[compare_origin], c_int, OpaqueImmutPointer[compare_origin2], c_int, OpaqueImmutPointer[compare_origin3]
         ) -> c_int,
-        xDestroy: fn (OpaqueMutPointer[origin4]) -> NoneType,
+        destructor_callback: ResultDestructorFn,
     ) -> SQLite3Result:
-        return self.lib.sqlite3_create_collation_v2(db, zName, eTextRep, pArg, xCompare, xDestroy)
+        return self.lib.sqlite3_create_collation_v2[
+            arg_origin=arg_origin,
+            compare_origin=compare_origin,
+            compare_origin2=compare_origin2,
+            compare_origin3=compare_origin3,
+        ](db, zName.unsafe_cstr_ptr(), eTextRep, pArg, xCompare, destructor_callback)
 
     fn collation_needed[
-        origin: MutOrigin, origin2: MutOrigin, origin3: ImmutOrigin
+        arg_origin: MutOrigin, cb_origin: MutOrigin, cb_origin2: ImmutOrigin
     ](
         self,
         db: ExternalMutPointer[sqlite3_connection],
-        pArg: OpaqueMutPointer,
+        pArg: OpaqueMutPointer[arg_origin],
         callback: fn (
-            OpaqueMutPointer[origin],
-            UnsafeMutPointer[sqlite3_connection, origin2],
+            OpaqueMutPointer[cb_origin],
+            ExternalMutPointer[sqlite3_connection],
             c_int,
-            UnsafeImmutPointer[c_char, origin3],
+            UnsafeImmutPointer[c_char, cb_origin2],
         ) -> NoneType,
     ) -> SQLite3Result:
         return self.lib.sqlite3_collation_needed(db, pArg, callback)
@@ -1178,31 +1179,44 @@ struct sqlite3:
     fn soft_heap_limit64(self, n: Int64) -> Int64:
         return self.lib.sqlite3_soft_heap_limit64(n)
 
-    fn stmt_status(self, pStmt: UnsafeMutPointer[sqlite3_stmt], op: c_int, resetFlg: c_int) -> SQLite3Result:
+    fn stmt_status(self, pStmt: ExternalMutPointer[sqlite3_stmt], op: c_int, resetFlg: c_int) -> SQLite3Result:
         return self.lib.sqlite3_stmt_status(pStmt, op, resetFlg)
 
     fn table_column_metadata(
         self,
         db: ExternalMutPointer[sqlite3_connection],
-        zDbName: UnsafeImmutPointer[c_char],
-        zTableName: UnsafeImmutPointer[c_char],
-        zColumnName: UnsafeImmutPointer[c_char],
-        pzDataType: UnsafeImmutPointer[c_char],
-        pzCollSeq: UnsafeImmutPointer[c_char],
-        pNotNull: UnsafeMutPointer[c_int],
-        pPrimaryKey: UnsafeMutPointer[c_int],
-        pAutoinc: UnsafeMutPointer[c_int],
+        var zDbName: Optional[String],
+        mut zTableName: String,
+        var zColumnName: Optional[String],
+        var pzDataType: Optional[String],
+        var pzCollSeq: Optional[String],
+        var pNotNull: Optional[c_int],
+        var pPrimaryKey: Optional[c_int],
+        var pAutoinc: Optional[c_int],
     ) -> SQLite3Result:
-        return self.lib.sqlite3_table_column_metadata(
+        var db_ptr = zDbName.value().unsafe_cstr_ptr() if zDbName else ExternalImmutPointer[Int8]()
+        var col_name_ptr = zColumnName.value().unsafe_cstr_ptr() if zColumnName else ExternalImmutPointer[Int8]()
+        var dt_ptr = UnsafePointerV2(pzDataType.value().unsafe_cstr_ptr()) if pzDataType else ExternalImmutPointer[Int8]()
+        var coll_seq_ptr = UnsafePointerV2(pzCollSeq.value().unsafe_cstr_ptr()) if pzCollSeq else ExternalImmutPointer[Int8]()
+        var nn_ptr = UnsafePointerV2(to=pNotNull.value()) if pNotNull else ExternalImmutPointer[c_int]()
+        var pk_ptr = UnsafePointerV2(to=pPrimaryKey.value()) if pPrimaryKey else ExternalImmutPointer[c_int]()
+        var ai_ptr = UnsafePointerV2(to=pAutoinc.value()) if pAutoinc else ExternalImmutPointer[c_int]()
+
+        return self.lib.sqlite3_table_column_metadata[
+            dt_origin=origin_of(pzDataType._value),
+            dt_origin2=origin_of(dt_ptr),
+            cs_origin=origin_of(pzCollSeq._value),
+            cs_origin2=origin_of(coll_seq_ptr),
+        ](
             db,
-            zDbName,
-            zTableName,
-            zColumnName,
-            UnsafePointerV2(to=pzDataType),
-            UnsafePointerV2(to=pzCollSeq),
-            pNotNull,
-            pPrimaryKey,
-            pAutoinc,
+            db_ptr,
+            zTableName.unsafe_cstr_ptr(),
+            col_name_ptr,
+            UnsafePointerV2(to=dt_ptr),
+            UnsafePointerV2(to=coll_seq_ptr),
+            nn_ptr,
+            pk_ptr,
+            ai_ptr,
         )
 
     fn load_extension[
@@ -1210,11 +1224,11 @@ struct sqlite3:
     ](
         self,
         db: ExternalMutPointer[sqlite3_connection],
-        zFile: UnsafeImmutPointer[c_char],
-        zProc: UnsafeImmutPointer[c_char],
-        pzErrMsg: UnsafeMutPointer[UnsafeMutPointer[c_char, origin]],
+        mut zFile: String,
+        mut zProc: String,
+        pzErrMsg: UnsafeMutPointer[c_char, origin],
     ) -> SQLite3Result:
-        return self.lib.sqlite3_load_extension(db, zFile, zProc, pzErrMsg)
+        return self.lib.sqlite3_load_extension(db, zFile.unsafe_cstr_ptr(), zProc.unsafe_cstr_ptr(), UnsafePointerV2(to=pzErrMsg))
 
     fn enable_load_extension(self, db: ExternalMutPointer[sqlite3_connection], onoff: c_int) -> SQLite3Result:
         return self.lib.sqlite3_enable_load_extension(db, onoff)
@@ -1222,7 +1236,7 @@ struct sqlite3:
     fn get_autocommit(self, db: ExternalMutPointer[sqlite3_connection]) -> Bool:
         return self.lib.sqlite3_get_autocommit(db) != 0
 
-    fn db_handle(self, pStmt: UnsafeMutPointer[sqlite3_stmt]) -> ExternalMutPointer[sqlite3_connection]:
+    fn db_handle(self, pStmt: ExternalMutPointer[sqlite3_stmt]) -> ExternalMutPointer[sqlite3_connection]:
         return self.lib.sqlite3_db_handle(pStmt)
 
     fn db_name(self, db: ExternalMutPointer[sqlite3_connection], N: c_int) -> StringSlice[ImmutableAnyOrigin]:
@@ -1248,34 +1262,49 @@ struct sqlite3:
         return self.lib.sqlite3_txn_state(db, zSchema.unsafe_cstr_ptr())
 
     fn next_stmt(
-        self, pDb: ExternalMutPointer[sqlite3_connection], pStmt: UnsafeMutPointer[sqlite3_stmt]
+        self, pDb: ExternalMutPointer[sqlite3_connection], pStmt: ExternalMutPointer[sqlite3_stmt]
     ) -> ExternalMutPointer[sqlite3_stmt]:
         return self.lib.sqlite3_next_stmt(pDb, pStmt)
 
-    fn update_hook(
+    fn update_hook[
+        cb_origin: MutOrigin,
+        cb_fn_origin: MutOrigin,
+        cb_fn_origin2: MutOrigin,
+        cb_fn_origin3: MutOrigin,
+        arg_origin: MutOrigin,
+    ](
         self,
         db: ExternalMutPointer[sqlite3_connection],
         xCallback: UnsafeMutPointer[
-            fn (OpaqueMutPointer, c_int, UnsafeMutPointer[c_char], UnsafeMutPointer[c_char], Int64)
+            fn (OpaqueMutPointer[cb_fn_origin], c_int, UnsafeMutPointer[c_char, cb_fn_origin2], UnsafeMutPointer[c_char, cb_fn_origin3], Int64),
+            cb_origin
         ],
-        pArg: OpaqueMutPointer,
+        pArg: OpaqueMutPointer[arg_origin],
     ) -> None:
         self.lib.sqlite3_update_hook(db, xCallback, pArg)
 
-    fn commit_hook(
+    fn commit_hook[
+        cb_origin: MutOrigin,
+        cb_fn_origin: MutOrigin,
+        arg_origin: MutOrigin,
+    ](
         self,
         db: ExternalMutPointer[sqlite3_connection],
-        xCallback: UnsafeMutPointer[fn (OpaqueMutPointer) -> c_int],
-        pArg: OpaqueMutPointer,
-    ) -> OpaqueMutPointer:
+        xCallback: UnsafeMutPointer[fn (OpaqueMutPointer[cb_fn_origin]) -> c_int, cb_origin],
+        pArg: OpaqueMutPointer[arg_origin],
+    ) -> ExternalMutPointer[NoneType]:
         return self.lib.sqlite3_commit_hook(db, xCallback, pArg)
 
-    fn rollback_hook(
+    fn rollback_hook[
+        cb_origin: MutOrigin,
+        cb_fn_origin: MutOrigin,
+        arg_origin: MutOrigin,
+    ](
         self,
         db: ExternalMutPointer[sqlite3_connection],
-        xCallback: UnsafeMutPointer[fn (OpaqueMutPointer)],
-        pArg: OpaqueMutPointer,
-    ) -> OpaqueMutPointer:
+        xCallback: UnsafeMutPointer[fn (OpaqueMutPointer[cb_fn_origin]), cb_origin],
+        pArg: OpaqueMutPointer[arg_origin],
+    ) -> ExternalMutPointer[NoneType]:
         return self.lib.sqlite3_rollback_hook(db, xCallback, pArg)
 
     fn auto_extension(self, xEntryPoint: UnsafeMutPointer[fn () -> c_int]) -> SQLite3Result:
@@ -1291,113 +1320,119 @@ struct sqlite3:
         return self.lib.sqlite3_reset_auto_extension()
 
     fn blob_open[
-        origin: MutOrigin
+        db_origin: ImmutOrigin,
+        table_origin: ImmutOrigin,
+        column_origin: ImmutOrigin,
+        blob_origin: MutOrigin
     ](
         self,
         db: ExternalMutPointer[sqlite3_connection],
-        zDb: UnsafeImmutPointer[c_char],
-        zTable: UnsafeImmutPointer[c_char],
-        zColumn: UnsafeImmutPointer[c_char],
+        mut zDb: String,
+        mut zTable: String,
+        mut zColumn: String,
         iRow: Int64,
         flags: c_int,
-        ppBlob: UnsafeMutPointer[UnsafeMutPointer[sqlite3_blob, origin]],
+        ppBlob: UnsafeMutPointer[ExternalMutPointer[sqlite3_blob], blob_origin],
     ) -> SQLite3Result:
-        return self.lib.sqlite3_blob_open(db, zDb, zTable, zColumn, iRow, flags, ppBlob)
+        return self.lib.sqlite3_blob_open(db, zDb.unsafe_cstr_ptr(), zTable.unsafe_cstr_ptr(), zColumn.unsafe_cstr_ptr(), iRow, flags, ppBlob)
 
-    fn blob_reopen(self, pBlob: UnsafeMutPointer[sqlite3_blob], iRow: Int64) -> SQLite3Result:
+    fn blob_reopen(self, pBlob: ExternalMutPointer[sqlite3_blob], iRow: Int64) -> SQLite3Result:
         return self.lib.sqlite3_blob_reopen(pBlob, iRow)
 
-    fn blob_close(self, pBlob: UnsafeMutPointer[sqlite3_blob]) -> SQLite3Result:
+    fn blob_close(self, pBlob: ExternalMutPointer[sqlite3_blob]) -> SQLite3Result:
         return self.lib.sqlite3_blob_close(pBlob)
 
-    fn blob_bytes(self, pBlob: UnsafeMutPointer[sqlite3_blob]) -> SQLite3Result:
+    fn blob_bytes(self, pBlob: ExternalMutPointer[sqlite3_blob]) -> SQLite3Result:
         return self.lib.sqlite3_blob_bytes(pBlob)
 
-    fn blob_read(
-        self, pBlob: UnsafeMutPointer[sqlite3_blob], Z: OpaqueMutPointer, N: c_int, iOffset: c_int
+    fn blob_read[origin: MutOrigin](
+        self, pBlob: ExternalMutPointer[sqlite3_blob], Z: OpaqueMutPointer[origin], N: c_int, iOffset: c_int
     ) -> SQLite3Result:
         return self.lib.sqlite3_blob_read(pBlob, Z, N, iOffset)
 
-    fn blob_write(
-        self, pBlob: UnsafeMutPointer[sqlite3_blob], z: OpaqueMutPointer, n: c_int, iOffset: c_int
+    fn blob_write[origin: MutOrigin](
+        self, pBlob: ExternalMutPointer[sqlite3_blob], z: OpaqueMutPointer[origin], n: c_int, iOffset: c_int
     ) -> SQLite3Result:
         return self.lib.sqlite3_blob_write(pBlob, z, n, iOffset)
 
-    fn file_control(
+    fn file_control[
+        db_name_origin: ImmutOrigin,
+        arg_origin: MutOrigin,
+    ](
         self,
         db: ExternalMutPointer[sqlite3_connection],
-        zDbName: UnsafeImmutPointer[c_char],
+        mut zDbName: String,
         op: c_int,
-        pArg: OpaqueMutPointer,
+        pArg: OpaqueMutPointer[arg_origin],
     ) -> SQLite3Result:
-        return self.lib.sqlite3_file_control(db, zDbName, op, pArg)
+        return self.lib.sqlite3_file_control(db, zDbName.unsafe_cstr_ptr(), op, pArg)
 
     fn backup_init(
         self,
         pDest: ExternalMutPointer[sqlite3_connection],
-        zDestName: UnsafeImmutPointer[c_char],
+        mut zDestName: String,
         pSource: ExternalMutPointer[sqlite3_connection],
-        zSourceName: UnsafeImmutPointer[c_char],
+        mut zSourceName: String,
     ) -> ExternalMutPointer[sqlite3_backup]:
-        return self.lib.sqlite3_backup_init(pDest, zDestName, pSource, zSourceName)
+        return self.lib.sqlite3_backup_init(pDest, zDestName.unsafe_cstr_ptr(), pSource, zSourceName.unsafe_cstr_ptr())
 
-    fn backup_step(self, p: UnsafeMutPointer[sqlite3_backup], nPage: c_int) -> SQLite3Result:
+    fn backup_step(self, p: ExternalMutPointer[sqlite3_backup], nPage: c_int) -> SQLite3Result:
         return self.lib.sqlite3_backup_step(p, nPage)
 
-    fn backup_finish(self, p: UnsafeMutPointer[sqlite3_backup]) -> SQLite3Result:
+    fn backup_finish(self, p: ExternalMutPointer[sqlite3_backup]) -> SQLite3Result:
         return self.lib.sqlite3_backup_finish(p)
 
-    fn backup_remaining(self, p: UnsafeMutPointer[sqlite3_backup]) -> SQLite3Result:
+    fn backup_remaining(self, p: ExternalMutPointer[sqlite3_backup]) -> SQLite3Result:
         return self.lib.sqlite3_backup_remaining(p)
 
-    fn backup_pagecount(self, p: UnsafeMutPointer[sqlite3_backup]) -> SQLite3Result:
+    fn backup_pagecount(self, p: ExternalMutPointer[sqlite3_backup]) -> SQLite3Result:
         return self.lib.sqlite3_backup_pagecount(p)
 
     fn unlock_notify[
-        origin: MutOrigin, origin2: MutOrigin
+        notify_origin: MutOrigin, notify_origin2: MutOrigin, arg_origin: MutOrigin,
     ](
         self,
         pBlocked: ExternalMutPointer[sqlite3_connection],
-        xNotify: fn (UnsafeMutPointer[OpaqueMutPointer[origin], origin2], c_int) -> NoneType,
-        pNotifyArg: OpaqueMutPointer,
+        xNotify: fn (UnsafeMutPointer[OpaqueMutPointer[notify_origin], notify_origin2], c_int) -> NoneType,
+        pNotifyArg: OpaqueMutPointer[arg_origin],
     ) -> SQLite3Result:
         return self.lib.sqlite3_unlock_notify(pBlocked, xNotify, pNotifyArg)
 
-    fn log(self, iErrCode: c_int, zFormat: UnsafeImmutPointer[c_char]):
-        self.lib.sqlite3_log(iErrCode, zFormat)
+    fn log(self, iErrCode: c_int, mut zFormat: String):
+        self.lib.sqlite3_log(iErrCode, zFormat.unsafe_cstr_ptr())
 
     fn wal_hook[
-        origin: MutOrigin, origin2: MutOrigin, origin3: MutOrigin
+        cb_origin: MutOrigin, cb_origin2: MutOrigin, arg_origin: MutOrigin
     ](
         self,
         db: ExternalMutPointer[sqlite3_connection],
         xCallback: fn (
-            OpaqueMutPointer[origin],
-            UnsafeMutPointer[sqlite3_connection, origin2],
-            UnsafeMutPointer[c_char, origin3],
+            OpaqueMutPointer[cb_origin],
+            ExternalMutPointer[sqlite3_connection],
+            UnsafeMutPointer[c_char, cb_origin2],
             c_int,
         ) -> c_int,
-        pArg: OpaqueMutPointer,
-    ) -> OpaqueMutPointer:
+        pArg: OpaqueMutPointer[arg_origin],
+    ) -> ExternalMutPointer[NoneType]:
         return self.lib.sqlite3_wal_hook(db, xCallback, pArg)
 
     fn wal_autocheckpoint(self, db: ExternalMutPointer[sqlite3_connection], N: c_int) -> SQLite3Result:
         return self.lib.sqlite3_wal_autocheckpoint(db, N)
 
     fn wal_checkpoint(
-        self, db: ExternalMutPointer[sqlite3_connection], zDb: UnsafeImmutPointer[c_char]
+        self, db: ExternalMutPointer[sqlite3_connection], mut zDb: String
     ) -> SQLite3Result:
-        return self.lib.sqlite3_wal_checkpoint(db, zDb)
+        return self.lib.sqlite3_wal_checkpoint(db, zDb.unsafe_cstr_ptr())
 
     fn wal_checkpoint_v2(
         self,
         db: ExternalMutPointer[sqlite3_connection],
-        zDb: UnsafeImmutPointer[c_char],
+        mut zDb: String,
         eMode: c_int,
         pnLog: UnsafeMutPointer[c_int],
         pnCkpt: UnsafeMutPointer[c_int],
     ) -> SQLite3Result:
-        return self.lib.sqlite3_wal_checkpoint_v2(db, zDb, eMode, pnLog, pnCkpt)
+        return self.lib.sqlite3_wal_checkpoint_v2(db, zDb.unsafe_cstr_ptr(), eMode, pnLog, pnCkpt)
 
     fn vtab_config(self, db: ExternalMutPointer[sqlite3_connection], op: c_int) -> SQLite3Result:
         return self.lib.sqlite3_vtab_config(db, op)
@@ -1405,15 +1440,15 @@ struct sqlite3:
     fn vtab_on_conflict(self, db: ExternalMutPointer[sqlite3_connection]) -> SQLite3Result:
         return self.lib.sqlite3_vtab_on_conflict(db)
 
-    fn vtab_nochange(self, ctx: UnsafeMutPointer[sqlite3_context]) -> SQLite3Result:
+    fn vtab_nochange(self, ctx: ExternalMutPointer[sqlite3_context]) -> SQLite3Result:
         return self.lib.sqlite3_vtab_nochange(ctx)
 
     fn vtab_collation(
-        self, pIdxInfo: UnsafeMutPointer[sqlite3_index_info], iCons: c_int
+        self, pIdxInfo: ExternalMutPointer[sqlite3_index_info], iCons: c_int
     ) -> StringSlice[ImmutableAnyOrigin]:
         return StringSlice(unsafe_from_utf8_ptr=self.lib.sqlite3_vtab_collation(pIdxInfo, iCons))
 
-    fn vtab_distinct(self, pIdxInfo: UnsafeMutPointer[sqlite3_index_info]) -> SQLite3Result:
+    fn vtab_distinct(self, pIdxInfo: ExternalMutPointer[sqlite3_index_info]) -> SQLite3Result:
         return self.lib.sqlite3_vtab_distinct(pIdxInfo)
 
     fn db_cacheflush(self, db: ExternalMutPointer[sqlite3_connection]) -> SQLite3Result:
@@ -1422,19 +1457,19 @@ struct sqlite3:
     fn serialize(
         self,
         db: ExternalMutPointer[sqlite3_connection],
-        zSchema: UnsafeImmutPointer[c_char],
+        mut zSchema: String,
         piSize: UnsafeMutPointer[Int64],
         mFlags: UInt32,
     ) -> ExternalMutPointer[UInt8]:
-        return self.lib.sqlite3_serialize(db, zSchema, piSize, mFlags)
+        return self.lib.sqlite3_serialize(db, zSchema.unsafe_cstr_ptr(), piSize, mFlags)
 
     fn deserialize(
         self,
         db: ExternalMutPointer[sqlite3_connection],
-        zSchema: UnsafeImmutPointer[c_char],
+        mut zSchema: String,
         pData: UnsafeMutPointer[UInt8],
         szDb: Int64,
         szBuf: Int64,
         mFlags: UInt32,
     ) -> SQLite3Result:
-        return self.lib.sqlite3_deserialize(db, zSchema, pData, szDb, szBuf, mFlags)
+        return self.lib.sqlite3_deserialize(db, zSchema.unsafe_cstr_ptr(), pData, szDb, szBuf, mFlags)

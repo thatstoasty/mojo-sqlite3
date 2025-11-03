@@ -50,7 +50,7 @@ fn eq_ignore_ascii_case(a: Span[Byte], b: Span[Byte]) -> Bool:
     return True
 
 
-struct Statement[origin: Origin](Movable):
+struct Statement[origin: ImmutOrigin](Movable):
     """A prepared SQL statement that can be executed multiple times with different parameters.
 
     This struct wraps a SQLite prepared statement and provides methods for binding parameters,
@@ -301,18 +301,18 @@ struct Statement[origin: Origin](Movable):
         """
         self.connection[].raise_if_error(self.stmt.bind_double(index, value))
 
-    fn bind_text(self, index: UInt, var value: String, destructor: ResultDestructorFn) raises -> None:
+    fn bind_text(self, index: UInt, var value: String, destructor_callback: ResultDestructorFn) raises -> None:
         """Binds a text string value to the specified parameter.
 
         Args:
             index: The 1-based index of the parameter to bind.
             value: The string value to bind.
-            destructor: The destructor function to call when SQLite is done with the text.
+            destructor_callback: The destructor function to call when SQLite is done with the text.
 
         Raises:
             Error: If the bind operation fails.
         """
-        self.connection[].raise_if_error(self.stmt.bind_text(index, value, destructor))
+        self.connection[].raise_if_error(self.stmt.bind_text(index, value, destructor_callback))
 
     fn parameter_index(self, var name: String) -> Optional[UInt]:
         """Returns the index of the parameter with the specified name.

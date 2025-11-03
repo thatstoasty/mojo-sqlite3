@@ -15,26 +15,10 @@ from slight.c.types import (
     sqlite3_stmt,
     sqlite3_value,
     sqlite3_module,
+    AuthCallbackFn,
+    ResultDestructorFn,
 )
 
-
-alias ExecCallbackFn = fn[argv_origin: MutOrigin, col_name_origin: MutOrigin] (
-    data: OpaqueMutPointer,
-    argc: Int32,
-    argv: UnsafeMutPointer[UnsafeMutPointer[c_char, argv_origin]],
-    azColName: UnsafeMutPointer[UnsafeMutPointer[c_char, col_name_origin]],
-) -> c_int
-
-alias AuthCallbackFn = fn[
-    origin: MutOrigin, origin2: ImmutOrigin, origin3: ImmutOrigin, origin4: ImmutOrigin, origin5: ImmutOrigin
-] (
-    OpaqueMutPointer[origin],
-    c_int,
-    UnsafeImmutPointer[c_char, origin2],
-    UnsafeImmutPointer[c_char, origin3],
-    UnsafeImmutPointer[c_char, origin4],
-    UnsafeImmutPointer[c_char, origin5],
-) -> c_int
 
 alias SQLITE_OPEN_READONLY: Int32 = 0x00000001  # Ok for sqlite3_open_v2()
 alias SQLITE_OPEN_READWRITE: Int32 = 0x00000002  # Ok for sqlite3_open_v2()
@@ -463,106 +447,259 @@ struct _sqlite3(Movable):
         return self.lib.get_function[fn (type_of(db)) -> c_int]("sqlite3_is_interrupted")(db)
 
     fn sqlite3_busy_handler[
-        origin: MutOrigin
+        callback_origin: MutOrigin,
+        arg_origin: MutOrigin
     ](
         self,
         db: ExternalMutPointer[sqlite3_connection],
-        callback: fn (UnsafePointerV2[NoneType, origin], c_int) -> c_int,
-        arg: OpaqueMutPointer,
+        callback: fn (OpaqueMutPointer[callback_origin], c_int) -> c_int,
+        arg: OpaqueMutPointer[arg_origin],
     ) -> c_int:
+        """Register A Callback To Handle SQLITE_BUSY Errors.
+
+        This routine sets a callback function that might be invoked with the
+        user data pointer, any time a table in a database is busy. The callback
+        function can sleep, or take other action, to wait for the table to become
+        available. If the busy callback returns 0, then no additional attempts
+        are made to access the database and SQLITE_BUSY is returned.
+
+        Args:
+            db: Database connection handle.
+            callback: Function to call when a table is busy.
+            arg: User data pointer passed to callback.
+
+        Returns:
+            SQLITE_OK on success, or an error code on failure.
+        """
         return self.lib.get_function[fn (type_of(db), type_of(callback), type_of(arg)) -> c_int](
             "sqlite3_busy_handler"
         )(db, callback, arg)
 
     fn sqlite3_busy_timeout(self, db: ExternalMutPointer[sqlite3_connection], ms: c_int) -> c_int:
+        """Set A Busy Timeout.
+
+        This routine sets a busy handler that sleeps for a specified amount of
+        time when a table is locked. The handler will sleep multiple times until
+        at least "ms" milliseconds of sleeping have accumulated. After at least
+        "ms" milliseconds of sleeping, the handler returns 0 which causes
+        sqlite3_step() to return SQLITE_BUSY.
+
+        Calling this routine with an argument less than or equal to zero turns
+        off all busy handlers.
+
+        Args:
+            db: Database connection handle.
+            ms: Maximum time to wait in milliseconds.
+
+        Returns:
+            SQLITE_OK on success, or an error code on failure.
+        """
         return self.lib.get_function[fn (type_of(db), type_of(ms)) -> c_int]("sqlite3_busy_timeout")(db, ms)
 
-    fn sqlite3_malloc64(self, size: UInt64) -> OpaqueMutPointer:
-        return self.lib.get_function[fn (type_of(size)) -> OpaqueMutPointer]("sqlite3_malloc64")(size)
+    fn sqlite3_malloc64(self, size: UInt64) -> ExternalMutPointer[NoneType]:
+        """Memory Allocation Subsystem - 64-bit.
 
-    fn sqlite3_free(self, ptr: OpaqueMutPointer) -> NoneType:
+        This routine is like sqlite3_malloc() except that it allocates memory
+        with a 64-bit size argument. This routine is intended for use with
+        large allocations that may exceed the 32-bit limit.
+
+        Args:
+            size: Number of bytes to allocate.
+
+        Returns:
+            Pointer to allocated memory, or NULL if allocation fails.
+        """
+        return self.lib.get_function[fn (type_of(size)) -> ExternalMutPointer[NoneType]]("sqlite3_malloc64")(size)
+
+    fn sqlite3_free[origin: MutOrigin](self, ptr: OpaqueMutPointer[origin]) -> NoneType:
+        """Memory Deallocation.
+
+        This routine releases memory previously returned by sqlite3_malloc(),
+        sqlite3_malloc64(), sqlite3_realloc(), or sqlite3_realloc64().
+        Passing a NULL pointer to sqlite3_free() is a harmless no-op.
+
+        Args:
+            ptr: Pointer to memory to free.
+        """
         return self.lib.get_function[fn (type_of(ptr)) -> NoneType]("sqlite3_free")(ptr)
 
-    fn sqlite3_msize(self, ptr: OpaqueMutPointer) -> UInt64:
+    fn sqlite3_msize[origin: MutOrigin](self, ptr: OpaqueMutPointer[origin]) -> UInt64:
+        """Memory Size Of Allocation.
+
+        This routine returns the number of bytes of memory that were allocated
+        by sqlite3_malloc(), sqlite3_malloc64(), sqlite3_realloc(), or
+        sqlite3_realloc64(). The size returned is always at least as large
+        as the requested size but may be larger.
+
+        Args:
+            ptr: Pointer to allocated memory.
+
+        Returns:
+            Size of the allocation in bytes.
+        """
         return self.lib.get_function[fn (type_of(ptr)) -> UInt64]("sqlite3_msize")(ptr)
 
     fn sqlite3_set_authorizer[
-        origin: MutOrigin, origin2: ImmutOrigin, origin3: ImmutOrigin, origin4: ImmutOrigin, origin5: ImmutOrigin
+        origin: MutOrigin,
+        origin2: ImmutOrigin,
+        origin3: ImmutOrigin,
+        origin4: ImmutOrigin,
+        origin5: ImmutOrigin,
+        auth_callback: AuthCallbackFn,
+        userdata_origin: MutOrigin,
     ](
         self,
         db: ExternalMutPointer[sqlite3_connection],
-        xAuth: fn (
-            OpaqueMutPointer[origin],
-            c_int,
-            UnsafeImmutPointer[c_char, origin2],
-            UnsafeImmutPointer[c_char, origin3],
-            UnsafeImmutPointer[c_char, origin4],
-            UnsafeImmutPointer[c_char, origin5],
-        ) -> c_int,
-        pUserData: OpaqueMutPointer,
+        pUserData: OpaqueMutPointer[userdata_origin],
     ) -> c_int:
-        return self.lib.get_function[fn (type_of(db), type_of(xAuth), type_of(pUserData)) -> c_int](
+        """Compile-Time Authorization Callbacks.
+
+        This routine registers an authorizer callback with a particular database
+        connection. The authorizer callback is invoked as SQL statements are being
+        compiled by sqlite3_prepare() or its variants. At various points during
+        the compilation process, the authorizer callback is invoked to see if the
+        action being coded is allowed. The authorizer callback should return
+        SQLITE_OK to allow the action, SQLITE_IGNORE to cause the entire SQL
+        statement to be silently ignored, or SQLITE_DENY to cause the entire
+        SQL statement to fail with an error.
+
+        Params:
+            auth_callback: Authorizer callback function.
+
+        Args:
+            db: Database connection handle.
+            pUserData: User data pointer passed to callback.
+
+        Returns:
+            SQLITE_OK on success, or an error code on failure.
+        """
+        return self.lib.get_function[fn (type_of(db), type_of(auth_callback[origin, origin2, origin3, origin4, origin5]), type_of(pUserData)) -> c_int](
             "sqlite3_set_authorizer"
-        )(db, xAuth, pUserData)
+        )(db, auth_callback[origin, origin2, origin3, origin4, origin5], pUserData)
 
     fn sqlite3_trace[
-        origin: MutOrigin, origin2: ImmutOrigin
+        origin: MutOrigin, origin2: ImmutOrigin, arg_origin: MutOrigin
     ](
         self,
         db: ExternalMutPointer[sqlite3_connection],
         xTrace: fn (OpaqueMutPointer[origin], UnsafeImmutPointer[c_char, origin2]) -> NoneType,
-        pArg: OpaqueMutPointer,
-    ) -> OpaqueMutPointer:
-        return self.lib.get_function[fn (type_of(db), type_of(xTrace), type_of(pArg)) -> OpaqueMutPointer](
+        pArg: OpaqueMutPointer[arg_origin],
+    ) -> ExternalMutPointer[NoneType]:
+        """Deprecated SQL Trace Hook.
+
+        This routine registers a callback function that is invoked at various
+        times when an SQL statement is being run by sqlite3_step(). The callback
+        is passed a UTF-8 rendering of the SQL statement text as the statement
+        first begins executing. This interface is deprecated; use sqlite3_trace_v2()
+        instead.
+
+        Args:
+            db: Database connection handle.
+            xTrace: Trace callback function.
+            pArg: User data pointer passed to callback.
+
+        Returns:
+            Previously registered user data pointer.
+        """
+        return self.lib.get_function[fn (type_of(db), type_of(xTrace), type_of(pArg)) -> ExternalMutPointer[NoneType]](
             "sqlite3_trace"
         )(db, xTrace, pArg)
 
     fn sqlite3_profile[
-        origin: MutOrigin, origin2: ImmutOrigin
+        origin: MutOrigin, origin2: ImmutOrigin, arg_origin: MutOrigin
     ](
         self,
         db: ExternalMutPointer[sqlite3_connection],
         xProfile: fn (OpaqueMutPointer[origin], UnsafeImmutPointer[c_char, origin2], UInt64) -> NoneType,
-        pArg: OpaqueMutPointer,
-    ) -> OpaqueMutPointer:
-        return self.lib.get_function[fn (type_of(db), type_of(xProfile), type_of(pArg)) -> OpaqueMutPointer](
+        pArg: OpaqueMutPointer[arg_origin],
+    ) -> ExternalMutPointer[NoneType]:
+        """Deprecated SQL Profile Hook.
+
+        This routine registers a callback function that is invoked as each SQL
+        statement finishes. The profile callback contains the original SQL text
+        and an estimate of wall-clock time of how long that statement took to run.
+        This interface is deprecated; use sqlite3_trace_v2() instead.
+
+        Args:
+            db: Database connection handle.
+            xProfile: Profile callback function.
+            pArg: User data pointer passed to callback.
+
+        Returns:
+            Previously registered user data pointer.
+        """
+        return self.lib.get_function[fn (type_of(db), type_of(xProfile), type_of(pArg)) -> ExternalMutPointer[NoneType]](
             "sqlite3_profile"
         )(db, xProfile, pArg)
 
     fn sqlite3_trace_v2[
-        origin: MutOrigin, origin2: MutOrigin, origin3: MutOrigin
+        origin: MutOrigin, origin2: MutOrigin, origin3: MutOrigin, ctx_origin: MutOrigin
     ](
         self,
         db: ExternalMutPointer[sqlite3_connection],
         uMask: c_uint,
         xCallback: fn (c_uint, OpaqueMutPointer[origin], OpaqueMutPointer[origin2], OpaqueMutPointer[origin3]) -> c_int,
-        pCtx: OpaqueMutPointer,
+        pCtx: OpaqueMutPointer[ctx_origin],
     ) -> c_int:
+        """SQL Trace Event Callbacks.
+
+        This interface registers a callback function that is invoked to provide
+        tracing and/or profiling information about the execution of SQL statements.
+        The callback can be selectively enabled for different trace event types
+        using the uMask parameter. This is the preferred interface for tracing
+        and profiling, superseding sqlite3_trace() and sqlite3_profile().
+
+        Args:
+            db: Database connection handle.
+            uMask: Bitmask of trace event types to monitor.
+            xCallback: Trace callback function.
+            pCtx: User data pointer passed to callback.
+
+        Returns:
+            SQLITE_OK on success, or an error code on failure.
+        """
         return self.lib.get_function[fn (type_of(db), type_of(uMask), type_of(xCallback), type_of(pCtx)) -> c_int](
             "sqlite3_trace_v2"
         )(db, uMask, xCallback, pCtx)
 
     fn sqlite3_progress_handler[
-        origin: MutOrigin
+        origin: MutOrigin, arg_origin: MutOrigin
     ](
         self,
         db: ExternalMutPointer[sqlite3_connection],
         nOps: c_int,
         xProgress: fn (OpaqueMutPointer[origin]) -> c_int,
-        pArg: OpaqueMutPointer,
+        pArg: OpaqueMutPointer[arg_origin],
     ) -> NoneType:
+        """Query Progress Callbacks.
+
+        This routine registers a callback function that is invoked periodically
+        during long running calls to sqlite3_step() for a statement on the
+        database connection identified by the first argument. The progress
+        callback is invoked once for every N virtual machine opcodes, where N
+        is the second argument to this function. If the progress callback returns
+        non-zero, the operation is interrupted.
+
+        Args:
+            db: Database connection handle.
+            nOps: Invoke callback after this many virtual machine operations.
+            xProgress: Progress callback function.
+            pArg: User data pointer passed to callback.
+        """
         return self.lib.get_function[fn (type_of(db), type_of(nOps), type_of(xProgress), type_of(pArg)) -> NoneType](
             "sqlite3_progress_handler"
         )(db, nOps, xProgress, pArg)
 
     fn sqlite3_open_v2[
-        origin: MutOrigin
+        filename_origin: ImmutOrigin,
+        db_origin: MutOrigin,
+        vfs_origin: ImmutOrigin,
     ](
         self,
-        filename: UnsafeImmutPointer[c_char],
-        ppDb: UnsafeMutPointer[UnsafeMutPointer[sqlite3_connection, origin]],
+        filename: UnsafeImmutPointer[c_char, filename_origin],
+        ppDb: UnsafeMutPointer[ExternalMutPointer[sqlite3_connection], db_origin],
         flags: c_int,
-        zVfs: UnsafeImmutPointer[c_char],
+        zVfs: UnsafeImmutPointer[c_char, vfs_origin],
     ) -> c_int:
         """Open A Database Connection with specified flags and VFS.
 
@@ -716,14 +853,14 @@ struct _sqlite3(Movable):
         )
 
     fn sqlite3_prepare_v2[
-        origin: MutOrigin, origin2: ImmutOrigin
+        sql_origin: ImmutOrigin, stmt_origin: MutOrigin, tail_origin1: ImmutOrigin, tail_origin2: MutOrigin
     ](
         self,
         db: ExternalMutPointer[sqlite3_connection],
-        zSql: UnsafeImmutPointer[c_char],
+        zSql: UnsafeImmutPointer[c_char, sql_origin],
         nByte: c_int,
-        ppStmt: UnsafeMutPointer[UnsafeMutPointer[sqlite3_stmt, origin]],
-        pzTail: UnsafeMutPointer[UnsafeImmutPointer[c_char, origin2]],
+        ppStmt: UnsafeMutPointer[ExternalMutPointer[sqlite3_stmt], stmt_origin],
+        pzTail: UnsafeMutPointer[UnsafeImmutPointer[c_char, tail_origin1], tail_origin2],
     ) -> c_int:
         """Compile an SQL statement into a prepared statement object (Version 2).
 
@@ -754,16 +891,39 @@ struct _sqlite3(Movable):
         ]("sqlite3_prepare_v2")(db, zSql, nByte, ppStmt, pzTail)
 
     fn sqlite3_prepare_v3[
-        sql: ImmutOrigin, tail: MutOrigin
+        sql_origin: ImmutOrigin, stmt_origin: MutOrigin, tail_origin: MutOrigin
     ](
         self,
         db: ExternalMutPointer[sqlite3_connection],
-        zSql: UnsafeImmutPointer[c_char, sql],
+        zSql: UnsafeImmutPointer[c_char, sql_origin],
         nByte: c_int,
         prepFlags: c_uint,
-        ppStmt: UnsafeMutPointer[ExternalMutPointer[sqlite3_stmt]],
-        pzTail: UnsafeMutPointer[UnsafePointer[c_char, mut=False, origin=sql], tail],
+        ppStmt: UnsafeMutPointer[ExternalMutPointer[sqlite3_stmt], stmt_origin],
+        pzTail: UnsafeMutPointer[UnsafePointer[c_char, mut=False, origin=sql_origin], tail_origin],
     ) -> c_int:
+        """Compile an SQL statement into a prepared statement object (Version 3).
+
+        This function is similar to sqlite3_prepare_v2() but adds a prepFlags
+        parameter that provides additional control over the prepared statement.
+        Flags can be used to enable or disable certain optimizations or behaviors.
+
+        Common flags include:
+        - SQLITE_PREPARE_PERSISTENT: Prepared statement is likely to be retained
+          for a long time and should be optimized accordingly.
+        - SQLITE_PREPARE_NORMALIZE: Return normalized SQL text.
+        - SQLITE_PREPARE_NO_VTAB: Do not invoke virtual table xConnect methods.
+
+        Args:
+            db: Database connection handle.
+            zSql: UTF-8 encoded SQL statement text.
+            nByte: Maximum length of zSql in bytes (or -1 for null-terminated).
+            prepFlags: Flags controlling statement preparation.
+            ppStmt: OUT: Compiled prepared statement object.
+            pzTail: OUT: Pointer to unused portion of zSql (or NULL).
+
+        Returns:
+            SQLITE_OK on success, or an error code on failure.
+        """
         return self.lib.get_function[
             fn (
                 type_of(db),
@@ -775,7 +935,7 @@ struct _sqlite3(Movable):
             ) -> c_int
         ]("sqlite3_prepare_v3")(db, zSql, nByte, prepFlags, ppStmt, pzTail)
 
-    fn sqlite3_sql(self, pStmt: UnsafeMutPointer[sqlite3_stmt]) -> ExternalImmutPointer[c_char]:
+    fn sqlite3_sql(self, pStmt: ExternalMutPointer[sqlite3_stmt]) -> ExternalImmutPointer[c_char]:
         """Retrieve the SQL text of a prepared statement.
 
         Returns a pointer to a copy of the UTF-8 SQL text used to create the
@@ -790,7 +950,7 @@ struct _sqlite3(Movable):
         """
         return self.lib.get_function[fn (type_of(pStmt)) -> ExternalImmutPointer[c_char]]("sqlite3_sql")(pStmt)
 
-    fn sqlite3_expanded_sql(self, pStmt: UnsafeMutPointer[sqlite3_stmt]) -> ExternalMutPointer[c_char]:
+    fn sqlite3_expanded_sql(self, pStmt: ExternalMutPointer[sqlite3_stmt]) -> ExternalMutPointer[c_char]:
         """Retrieve SQL with bound parameters expanded.
 
         Returns a pointer to a UTF-8 string containing the SQL text of the
@@ -805,7 +965,7 @@ struct _sqlite3(Movable):
         """
         return self.lib.get_function[fn (type_of(pStmt)) -> ExternalMutPointer[c_char]]("sqlite3_expanded_sql")(pStmt)
 
-    fn sqlite3_stmt_readonly(self, pStmt: UnsafeMutPointer[sqlite3_stmt]) -> c_int:
+    fn sqlite3_stmt_readonly(self, pStmt: ExternalMutPointer[sqlite3_stmt]) -> c_int:
         """Determine if a prepared statement is read-only.
 
         Returns true (non-zero) if and only if the prepared statement makes
@@ -821,27 +981,70 @@ struct _sqlite3(Movable):
         """
         return self.lib.get_function[fn (type_of(pStmt)) -> c_int]("sqlite3_stmt_readonly")(pStmt)
 
-    fn sqlite3_stmt_isexplain(self, pStmt: UnsafeMutPointer[sqlite3_stmt]) -> c_int:
+    fn sqlite3_stmt_isexplain(self, pStmt: ExternalMutPointer[sqlite3_stmt]) -> c_int:
+        """Query The EXPLAIN Setting For A Prepared Statement.
+
+        This routine returns 0 if the prepared statement is a normal statement,
+        1 if it is an EXPLAIN statement, or 2 if it is an EXPLAIN QUERY PLAN
+        statement. This information can be useful for logging and debugging purposes.
+
+        Args:
+            pStmt: Pointer to the prepared statement.
+
+        Returns:
+            0 for normal statement, 1 for EXPLAIN, 2 for EXPLAIN QUERY PLAN.
+        """
         return self.lib.get_function[fn (type_of(pStmt)) -> c_int]("sqlite3_stmt_isexplain")(pStmt)
 
-    fn sqlite3_stmt_busy(self, pStmt: UnsafeMutPointer[sqlite3_stmt]) -> c_int:
+    fn sqlite3_stmt_busy(self, pStmt: ExternalMutPointer[sqlite3_stmt]) -> c_int:
+        """Determine If A Prepared Statement Has Been Reset.
+
+        This interface returns true (non-zero) if the prepared statement has
+        been stepped at least once using sqlite3_step() but has neither run
+        to completion (returned SQLITE_DONE from sqlite3_step()) nor been
+        reset using sqlite3_reset(). Returns false (zero) otherwise.
+
+        Args:
+            pStmt: Pointer to the prepared statement.
+
+        Returns:
+            Non-zero if the statement is busy, zero otherwise.
+        """
         return self.lib.get_function[fn (type_of(pStmt)) -> c_int]("sqlite3_stmt_busy")(pStmt)
 
     fn sqlite3_bind_blob64[
-        origin: MutOrigin
+        value_origin: ImmutOrigin,
     ](
         self,
-        pStmt: UnsafeMutPointer[sqlite3_stmt],
+        pStmt: ExternalMutPointer[sqlite3_stmt],
         idx: c_int,
-        value: OpaqueImmutPointer,
+        value: OpaqueImmutPointer[value_origin],
         n: UInt64,
-        destructor: fn (OpaqueMutPointer[origin]) -> NoneType,
+        destructor_callback: ResultDestructorFn,
     ) -> c_int:
-        return self.lib.get_function[
-            fn (type_of(pStmt), type_of(idx), type_of(value), type_of(n), type_of(destructor)) -> c_int
-        ]("sqlite3_bind_blob64")(pStmt, idx, value, n, destructor)
+        """Binding Values To Prepared Statements - BLOB (64-bit).
 
-    fn sqlite3_bind_double(self, pStmt: UnsafeMutPointer[sqlite3_stmt], idx: c_int, value: Float64) -> c_int:
+        This routine binds a BLOB value to a parameter in a prepared statement.
+        The BLOB size is specified as a 64-bit value, allowing for very large
+        BLOBs. The destructor_callback callback is invoked to dispose of the BLOB after
+        SQLite is done with it.
+    
+
+        Args:
+            pStmt: Prepared statement.
+            idx: Index of the parameter (1-based).
+            value: Pointer to BLOB data.
+            n: Size of BLOB in bytes (64-bit).
+            destructor_callback: Function to call when SQLite is done with the BLOB.
+
+        Returns:
+            SQLITE_OK on success, or an error code on failure.
+        """
+        return self.lib.get_function[
+            fn (type_of(pStmt), type_of(idx), type_of(value), type_of(n), type_of(destructor_callback)) -> c_int
+        ]("sqlite3_bind_blob64")(pStmt, idx, value, n, destructor_callback)
+
+    fn sqlite3_bind_double(self, pStmt: ExternalMutPointer[sqlite3_stmt], idx: c_int, value: Float64) -> c_int:
         """Binding Values To Prepared Statements - REAL.
 
         This routine binds a floating point value to a parameter in a prepared statement.
@@ -859,12 +1062,25 @@ struct _sqlite3(Movable):
             pStmt, idx, value
         )
 
-    fn sqlite3_bind_int64(self, pStmt: UnsafeMutPointer[sqlite3_stmt], idx: c_int, value: Int64) -> c_int:
+    fn sqlite3_bind_int64(self, pStmt: ExternalMutPointer[sqlite3_stmt], idx: c_int, value: Int64) -> c_int:
+        """Binding Values To Prepared Statements - INTEGER (64-bit).
+
+        This routine binds a 64-bit signed integer value to a parameter in a
+        prepared statement. The parameter is identified by its index (1-based).
+
+        Args:
+            pStmt: Prepared statement.
+            idx: Index of the parameter (1-based).
+            value: The 64-bit integer value to bind.
+
+        Returns:
+            SQLITE_OK on success, or an error code on failure.
+        """
         return self.lib.get_function[fn (type_of(pStmt), type_of(idx), type_of(value)) -> c_int]("sqlite3_bind_int64")(
             pStmt, idx, value
         )
 
-    fn sqlite3_bind_null(self, pStmt: UnsafeMutPointer[sqlite3_stmt], idx: c_int) -> c_int:
+    fn sqlite3_bind_null(self, pStmt: ExternalMutPointer[sqlite3_stmt], idx: c_int) -> c_int:
         """Binding Values To Prepared Statements - NULL.
 
         This routine binds a NULL value to a parameter in a prepared statement.
@@ -880,53 +1096,106 @@ struct _sqlite3(Movable):
         return self.lib.get_function[fn (type_of(pStmt), type_of(idx)) -> c_int]("sqlite3_bind_null")(pStmt, idx)
 
     fn sqlite3_bind_text64[
-        origin: MutOrigin
+        value_origin: ImmutOrigin,
     ](
         self,
-        pStmt: UnsafeMutPointer[sqlite3_stmt],
+        pStmt: ExternalMutPointer[sqlite3_stmt],
         idx: c_int,
-        value: UnsafeImmutPointer[c_char],
+        value: UnsafeImmutPointer[c_char, value_origin],
         n: UInt64,
-        destructor: fn (OpaqueMutPointer[origin]) -> NoneType,
         encoding: c_uchar,
+        destructor_callback: ResultDestructorFn,
     ) -> c_int:
+        """Binding Values To Prepared Statements - TEXT (64-bit).
+
+        This routine binds a text value to a parameter in a prepared statement.
+        The text size is specified as a 64-bit value, allowing for very large
+        text strings. The encoding parameter specifies the text encoding (UTF-8
+        or UTF-16). The destructor_callback callback is invoked to dispose of the text
+        after SQLite is done with it.
+
+        Args:
+            pStmt: Prepared statement.
+            idx: Index of the parameter (1-based).
+            value: Pointer to text data.
+            n: Length of text in bytes (64-bit).
+            encoding: Text encoding (SQLITE_UTF8 or SQLITE_UTF16).
+            destructor_callback: Function to call when SQLite is done with the text.
+
+        Returns:
+            SQLITE_OK on success, or an error code on failure.
+        """
         return self.lib.get_function[
             fn (
                 type_of(pStmt),
                 type_of(idx),
                 type_of(value),
                 type_of(n),
-                type_of(destructor),
+                type_of(destructor_callback),
                 type_of(encoding),
             ) -> c_int
-        ]("sqlite3_bind_text64")(pStmt, idx, value, n, destructor, encoding)
+        ]("sqlite3_bind_text64")(pStmt, idx, value, n, destructor_callback, encoding)
 
     fn sqlite3_bind_pointer[
-        origin: MutOrigin
+        value_origin: MutOrigin,
+        type_origin: ImmutOrigin,
     ](
         self,
-        pStmt: UnsafeMutPointer[sqlite3_stmt],
+        pStmt: ExternalMutPointer[sqlite3_stmt],
         idx: c_int,
-        value: OpaqueMutPointer,
-        typeStr: UnsafeImmutPointer[c_char],
-        destructor: fn (OpaqueMutPointer[origin]) -> NoneType,
+        value: OpaqueMutPointer[value_origin],
+        typeStr: UnsafeImmutPointer[c_char, type_origin],
+        destructor_callback: ResultDestructorFn,
     ) -> c_int:
+        """Binding Values To Prepared Statements - Pointer.
+
+        This routine binds a pointer value to a parameter in a prepared statement.
+        The pointer is tagged with a type string for type safety. The destructor_callback
+        callback is invoked to dispose of the pointer after SQLite is done with it.
+        This is useful for passing application-specific data structures through
+        SQL functions.
+    
+        Args:
+            pStmt: Prepared statement.
+            idx: Index of the parameter (1-based).
+            value: Pointer value to bind.
+            typeStr: Type identifier string for type safety.
+            destructor_callback: Function to call when SQLite is done with the pointer.
+
+        Returns:
+            SQLITE_OK on success, or an error code on failure.
+        """
         return self.lib.get_function[
             fn (
                 type_of(pStmt),
                 type_of(idx),
                 type_of(value),
                 type_of(typeStr),
-                type_of(destructor),
+                type_of(destructor_callback),
             ) -> c_int
-        ]("sqlite3_bind_pointer")(pStmt, idx, value, typeStr, destructor)
+        ]("sqlite3_bind_pointer")(pStmt, idx, value, typeStr, destructor_callback)
 
-    fn sqlite3_bind_zeroblob(self, pStmt: UnsafeMutPointer[sqlite3_stmt], idx: c_int, n: c_int) -> c_int:
+    fn sqlite3_bind_zeroblob(self, pStmt: ExternalMutPointer[sqlite3_stmt], idx: c_int, n: c_int) -> c_int:
+        """Binding Values To Prepared Statements - Zeroblob.
+
+        This routine binds a BLOB filled with zeros to a parameter in a prepared
+        statement. The BLOB can later be opened and written to using the
+        incremental BLOB I/O routines. This is more efficient than binding a
+        zero-filled BLOB directly.
+
+        Args:
+            pStmt: Prepared statement.
+            idx: Index of the parameter (1-based).
+            n: Size of the zeroblob in bytes.
+
+        Returns:
+            SQLITE_OK on success, or an error code on failure.
+        """
         return self.lib.get_function[fn (type_of(pStmt), type_of(idx), type_of(n)) -> c_int]("sqlite3_bind_zeroblob")(
             pStmt, idx, n
         )
 
-    fn sqlite3_bind_parameter_count(self, pStmt: UnsafeMutPointer[sqlite3_stmt]) -> c_int:
+    fn sqlite3_bind_parameter_count(self, pStmt: ExternalMutPointer[sqlite3_stmt]) -> c_int:
         """Return the number of parameters in a prepared statement.
 
         This function returns the number of SQL parameters in the prepared
@@ -942,20 +1211,48 @@ struct _sqlite3(Movable):
         return self.lib.get_function[fn (type_of(pStmt)) -> c_int]("sqlite3_bind_parameter_count")(pStmt)
 
     fn sqlite3_bind_parameter_name(
-        self, pStmt: UnsafeMutPointer[sqlite3_stmt], idx: c_int
+        self, pStmt: ExternalMutPointer[sqlite3_stmt], idx: c_int
     ) -> ExternalImmutPointer[c_char]:
+        """Name Of A Host Parameter.
+
+        This routine returns a pointer to the name of the N-th SQL parameter
+        in the prepared statement. SQL parameters of the form "?NNN" or ":AAA"
+        or "@AAA" or "$AAA" have a name which is the string "?NNN" or ":AAA"
+        or "@AAA" or "$AAA" respectively. Parameters of the form "?" without
+        a following integer have no name and this routine returns NULL.
+
+        Args:
+            pStmt: Pointer to the prepared statement.
+            idx: Index of the parameter (1-based).
+
+        Returns:
+            Pointer to parameter name, or NULL if no name or invalid index.
+        """
         return self.lib.get_function[fn (type_of(pStmt), type_of(idx)) -> ExternalImmutPointer[c_char]](
             "sqlite3_bind_parameter_name"
         )(pStmt, idx)
 
     fn sqlite3_bind_parameter_index(
-        self, pStmt: UnsafeMutPointer[sqlite3_stmt], zName: UnsafeImmutPointer[c_char]
+        self, pStmt: ExternalMutPointer[sqlite3_stmt], zName: UnsafeImmutPointer[c_char]
     ) -> c_int:
+        """Index Of A Parameter With A Given Name.
+
+        This routine returns the index of an SQL parameter given its name.
+        The index value returned is suitable for use as the second argument
+        to sqlite3_bind_*(). A zero is returned if no matching parameter is found.
+
+        Args:
+            pStmt: Pointer to the prepared statement.
+            zName: Name of the parameter to find.
+
+        Returns:
+            Index of the parameter (1-based), or 0 if not found.
+        """
         return self.lib.get_function[fn (type_of(pStmt), type_of(zName)) -> c_int]("sqlite3_bind_parameter_index")(
             pStmt, zName
         )
 
-    fn sqlite3_clear_bindings(self, pStmt: UnsafeMutPointer[sqlite3_stmt]) -> c_int:
+    fn sqlite3_clear_bindings(self, pStmt: ExternalMutPointer[sqlite3_stmt]) -> c_int:
         """Reset All Bindings On A Prepared Statement.
 
         Contrary to the intuition of many, sqlite3_reset() does not reset
@@ -970,7 +1267,7 @@ struct _sqlite3(Movable):
         """
         return self.lib.get_function[fn (type_of(pStmt)) -> c_int]("sqlite3_clear_bindings")(pStmt)
 
-    fn sqlite3_column_count(self, pStmt: UnsafeMutPointer[sqlite3_stmt]) -> c_int:
+    fn sqlite3_column_count(self, pStmt: ExternalMutPointer[sqlite3_stmt]) -> c_int:
         """Return the number of columns in a result set.
 
         This function returns the number of columns in the result set returned
@@ -985,38 +1282,109 @@ struct _sqlite3(Movable):
         """
         return self.lib.get_function[fn (type_of(pStmt)) -> c_int]("sqlite3_column_count")(pStmt)
 
-    fn sqlite3_column_name(self, pStmt: UnsafeMutPointer[sqlite3_stmt], N: c_int) -> ExternalImmutPointer[c_char]:
+    fn sqlite3_column_name(self, pStmt: ExternalMutPointer[sqlite3_stmt], N: c_int) -> ExternalImmutPointer[c_char]:
+        """Column Names In A Result Set.
+
+        This routine returns the name assigned to a particular column in the
+        result set of a SELECT statement. The name of a column is either the
+        value assigned by the "AS" clause, or the name of the column in the
+        table if no AS clause is used.
+
+        Args:
+            pStmt: Pointer to the prepared statement.
+            N: Index of the column (0-based).
+
+        Returns:
+            Pointer to the column name.
+        """
         return self.lib.get_function[fn (type_of(pStmt), type_of(N)) -> ExternalImmutPointer[c_char]](
             "sqlite3_column_name"
         )(pStmt, N)
 
     fn sqlite3_column_database_name(
-        self, pStmt: UnsafeMutPointer[sqlite3_stmt], idx: c_int
+        self, pStmt: ExternalMutPointer[sqlite3_stmt], idx: c_int
     ) -> ExternalImmutPointer[c_char]:
+        """Source Of Data In A Query Result.
+
+        This routine returns the name of the database that is the origin of a
+        particular result column in a SELECT statement. This routine requires
+        that SQLite be compiled with the SQLITE_ENABLE_COLUMN_METADATA
+        preprocessor symbol.
+
+        Args:
+            pStmt: Pointer to the prepared statement.
+            idx: Index of the column (0-based).
+
+        Returns:
+            Pointer to the database name.
+        """
         return self.lib.get_function[fn (type_of(pStmt), type_of(idx)) -> ExternalImmutPointer[c_char]](
             "sqlite3_column_database_name"
         )(pStmt, idx)
 
     fn sqlite3_column_table_name(
-        self, pStmt: UnsafeMutPointer[sqlite3_stmt], idx: c_int
+        self, pStmt: ExternalMutPointer[sqlite3_stmt], idx: c_int
     ) -> ExternalImmutPointer[c_char]:
+        """Source Of Data In A Query Result.
+
+        This routine returns the name of the table that is the origin of a
+        particular result column in a SELECT statement. This routine requires
+        that SQLite be compiled with the SQLITE_ENABLE_COLUMN_METADATA
+        preprocessor symbol.
+
+        Args:
+            pStmt: Pointer to the prepared statement.
+            idx: Index of the column (0-based).
+
+        Returns:
+            Pointer to the table name.
+        """
         return self.lib.get_function[fn (type_of(pStmt), type_of(idx)) -> ExternalImmutPointer[c_char]](
             "sqlite3_column_table_name"
         )(pStmt, idx)
 
     fn sqlite3_column_origin_name(
-        self, pStmt: UnsafeMutPointer[sqlite3_stmt], idx: c_int
+        self, pStmt: ExternalMutPointer[sqlite3_stmt], idx: c_int
     ) -> ExternalImmutPointer[c_char]:
+        """Source Of Data In A Query Result.
+
+        This routine returns the name of the table column that is the origin
+        of a particular result column in a SELECT statement. This routine
+        requires that SQLite be compiled with the SQLITE_ENABLE_COLUMN_METADATA
+        preprocessor symbol.
+
+        Args:
+            pStmt: Pointer to the prepared statement.
+            idx: Index of the column (0-based).
+
+        Returns:
+            Pointer to the origin column name.
+        """
         return self.lib.get_function[fn (type_of(pStmt), type_of(idx)) -> ExternalImmutPointer[c_char]](
             "sqlite3_column_origin_name"
         )(pStmt, idx)
 
-    fn sqlite3_column_decltype(self, pStmt: UnsafeMutPointer[sqlite3_stmt], idx: c_int) -> ExternalImmutPointer[c_char]:
+    fn sqlite3_column_decltype(self, pStmt: ExternalMutPointer[sqlite3_stmt], idx: c_int) -> ExternalImmutPointer[c_char]:
+        """Declared Datatype Of A Query Result.
+
+        This routine returns the declared datatype of a result column. The
+        returned string is UTF-8 encoded and is the datatype declaration as
+        it appears in the CREATE TABLE statement. For example, in the database
+        schema "CREATE TABLE t1(c1 VARIANT)", the declared type of column c1
+        is "VARIANT".
+
+        Args:
+            pStmt: Pointer to the prepared statement.
+            idx: Index of the column (0-based).
+
+        Returns:
+            Pointer to the declared datatype string.
+        """
         return self.lib.get_function[fn (type_of(pStmt), type_of(idx)) -> ExternalImmutPointer[c_char]](
             "sqlite3_column_decltype"
         )(pStmt, idx)
 
-    fn sqlite3_step(self, pStmt: UnsafeMutPointer[sqlite3_stmt]) -> c_int:
+    fn sqlite3_step(self, pStmt: ExternalMutPointer[sqlite3_stmt]) -> c_int:
         """Execute a prepared statement.
 
         This function is used to evaluate a prepared statement that has been
@@ -1036,7 +1404,7 @@ struct _sqlite3(Movable):
         """
         return self.lib.get_function[fn (type_of(pStmt)) -> c_int]("sqlite3_step")(pStmt)
 
-    fn sqlite3_column_blob(self, pStmt: UnsafeMutPointer[sqlite3_stmt], iCol: c_int) -> ExternalMutPointer[NoneType]:
+    fn sqlite3_column_blob(self, pStmt: ExternalMutPointer[sqlite3_stmt], iCol: c_int) -> ExternalMutPointer[NoneType]:
         """Result Values From A Query - BLOB.
 
         These routines return information about a single column of the current
@@ -1054,7 +1422,7 @@ struct _sqlite3(Movable):
             "sqlite3_column_blob"
         )(pStmt, iCol)
 
-    fn sqlite3_column_double(self, pStmt: UnsafeMutPointer[sqlite3_stmt], iCol: c_int) -> Float64:
+    fn sqlite3_column_double(self, pStmt: ExternalMutPointer[sqlite3_stmt], iCol: c_int) -> Float64:
         """Result Values From A Query - REAL.
 
         This routine returns the value of the specified column as a floating
@@ -1072,12 +1440,25 @@ struct _sqlite3(Movable):
             pStmt, iCol
         )
 
-    fn sqlite3_column_int64(self, pStmt: UnsafeMutPointer[sqlite3_stmt], iCol: c_int) -> Int64:
+    fn sqlite3_column_int64(self, pStmt: ExternalMutPointer[sqlite3_stmt], iCol: c_int) -> Int64:
+        """Result Values From A Query - INTEGER (64-bit).
+
+        This routine returns the value of the specified column as a 64-bit
+        signed integer. If the column contains a NULL value or cannot be
+        converted to an integer, it returns 0.
+
+        Args:
+            pStmt: Prepared statement being evaluated.
+            iCol: Index of the column (leftmost column is 0).
+
+        Returns:
+            The column value as a 64-bit signed integer.
+        """
         return self.lib.get_function[fn (type_of(pStmt), type_of(iCol)) -> Int64]("sqlite3_column_int64")(
             pStmt, iCol
         )
 
-    fn sqlite3_column_text(self, pStmt: UnsafeMutPointer[sqlite3_stmt], iCol: c_int) -> ExternalImmutPointer[c_uchar]:
+    fn sqlite3_column_text(self, pStmt: ExternalMutPointer[sqlite3_stmt], iCol: c_int) -> ExternalImmutPointer[c_uchar]:
         """Retrieve column data as UTF-8 text.
 
         This function returns the value of the specified column as a UTF-8
@@ -1096,19 +1477,61 @@ struct _sqlite3(Movable):
         )(pStmt, iCol)
 
     fn sqlite3_column_value(
-        self, pStmt: UnsafeMutPointer[sqlite3_stmt], iCol: c_int
+        self, pStmt: ExternalMutPointer[sqlite3_stmt], iCol: c_int
     ) -> ExternalMutPointer[sqlite3_value]:
+        """Result Values From A Query - Unprotected sqlite3_value.
+
+        This routine returns the sqlite3_value object for the specified column.
+        The returned value is unprotected, meaning it is only valid until the
+        next call to sqlite3_step() or sqlite3_reset(). Use sqlite3_value_*()
+        functions to extract information from the returned value.
+
+        Args:
+            pStmt: Prepared statement being evaluated.
+            iCol: Index of the column (leftmost column is 0).
+
+        Returns:
+            Pointer to the sqlite3_value object for the column.
+        """
         return self.lib.get_function[fn (type_of(pStmt), type_of(iCol)) -> ExternalMutPointer[sqlite3_value]](
             "sqlite3_column_value"
         )(pStmt, iCol)
 
-    fn sqlite3_column_bytes(self, pStmt: UnsafeMutPointer[sqlite3_stmt], iCol: c_int) -> c_int:
+    fn sqlite3_column_bytes(self, pStmt: ExternalMutPointer[sqlite3_stmt], iCol: c_int) -> c_int:
+        """Size Of A BLOB Or TEXT Result In Bytes.
+
+        This routine returns the number of bytes in a BLOB or TEXT result.
+        For BLOBs, this is the exact size. For TEXT, this is the number of
+        bytes in the UTF-8 encoding. This routine must be called after
+        sqlite3_column_blob() or sqlite3_column_text().
+
+        Args:
+            pStmt: Prepared statement being evaluated.
+            iCol: Index of the column (leftmost column is 0).
+
+        Returns:
+            Number of bytes in the BLOB or TEXT value.
+        """
         return self.lib.get_function[fn (type_of(pStmt), type_of(iCol)) -> c_int]("sqlite3_column_bytes")(pStmt, iCol)
 
-    fn sqlite3_column_type(self, pStmt: UnsafeMutPointer[sqlite3_stmt], iCol: c_int) -> c_int:
+    fn sqlite3_column_type(self, pStmt: ExternalMutPointer[sqlite3_stmt], iCol: c_int) -> c_int:
+        """Datatype Code For The Initial Data Type Of A Result Column.
+
+        This routine returns one of SQLITE_INTEGER, SQLITE_FLOAT, SQLITE_TEXT,
+        SQLITE_BLOB, or SQLITE_NULL, indicating the datatype of the result
+        column. The return value is only meaningful if no automatic type
+        conversions have been performed.
+
+        Args:
+            pStmt: Prepared statement being evaluated.
+            iCol: Index of the column (leftmost column is 0).
+
+        Returns:
+            Datatype code (SQLITE_INTEGER, SQLITE_FLOAT, SQLITE_TEXT, SQLITE_BLOB, or SQLITE_NULL).
+        """
         return self.lib.get_function[fn (type_of(pStmt), type_of(iCol)) -> c_int]("sqlite3_column_type")(pStmt, iCol)
 
-    fn sqlite3_finalize(self, pStmt: UnsafeMutPointer[sqlite3_stmt]) -> c_int:
+    fn sqlite3_finalize(self, pStmt: ExternalMutPointer[sqlite3_stmt]) -> c_int:
         """Finalize a prepared statement.
 
         This function is used to delete a prepared statement. If the most recent
@@ -1124,7 +1547,7 @@ struct _sqlite3(Movable):
         """
         return self.lib.get_function[fn (type_of(pStmt)) -> c_int]("sqlite3_finalize")(pStmt)
 
-    fn sqlite3_reset(self, pStmt: UnsafeMutPointer[sqlite3_stmt]) -> c_int:
+    fn sqlite3_reset(self, pStmt: ExternalMutPointer[sqlite3_stmt]) -> c_int:
         """Reset a prepared statement.
 
         This function resets a prepared statement back to its initial state,
@@ -1142,34 +1565,55 @@ struct _sqlite3(Movable):
         return self.lib.get_function[fn (type_of(pStmt)) -> c_int]("sqlite3_reset")(pStmt)
 
     fn sqlite3_create_function_v2[
-        origin: MutOrigin,
-        origin2: MutOrigin,
-        origin3: MutOrigin,
-        origin4: MutOrigin,
-        origin5: MutOrigin,
-        origin6: MutOrigin,
-        origin7: MutOrigin,
-        origin8: MutOrigin,
+        fn_name_origin: ImmutOrigin,
+        app_origin: MutOrigin,
+        fn_origin: MutOrigin,
+        step_origin: MutOrigin,
     ](
         self,
         db: ExternalMutPointer[sqlite3_connection],
-        zFunctionName: UnsafeImmutPointer[c_char],
+        zFunctionName: UnsafeImmutPointer[c_char, fn_name_origin],
         nArg: c_int,
         eTextRep: c_int,
-        pApp: OpaqueMutPointer,
+        pApp: OpaqueMutPointer[app_origin],
         xFunc: fn (
-            UnsafeMutPointer[sqlite3_context, origin],
+            ExternalMutPointer[sqlite3_context],
             c_int,
-            UnsafeMutPointer[UnsafeMutPointer[sqlite3_value, origin2], origin3],
+            UnsafeMutPointer[ExternalMutPointer[sqlite3_value], fn_origin],
         ) -> NoneType,
         xStep: fn (
-            UnsafeMutPointer[sqlite3_context, origin4],
+            ExternalMutPointer[sqlite3_context],
             c_int,
-            UnsafeMutPointer[UnsafeMutPointer[sqlite3_value, origin5], origin6],
+            UnsafeMutPointer[ExternalMutPointer[sqlite3_value], step_origin],
         ) -> NoneType,
-        xFinal: fn (UnsafeMutPointer[sqlite3_context, origin7]) -> NoneType,
-        xDestroy: fn (OpaqueMutPointer[origin8]) -> NoneType,
+        xFinal: fn (ExternalMutPointer[sqlite3_context]) -> NoneType,
+        destructor_callback: ResultDestructorFn,
     ) -> c_int:
+        """Create Or Redefine SQL Functions.
+
+        This function is used to add SQL functions or aggregates or to redefine
+        the behavior of existing SQL functions or aggregates. The function
+        registers scalar or aggregate functions with a database connection.
+
+        For scalar functions, only xFunc should be non-NULL. For aggregate
+        functions, xStep and xFinal should be non-NULL and xFunc should be NULL.
+        The destructor_callback callback is invoked when the function is deleted, typically
+        when the database connection is closed.
+    
+        Args:
+            db: Database connection handle.
+            zFunctionName: Name of the function to create.
+            nArg: Number of arguments the function accepts (-1 for variable).
+            eTextRep: Text encoding and other flags (SQLITE_UTF8, etc.).
+            pApp: User data pointer passed to function callbacks.
+            xFunc: Scalar function implementation (NULL for aggregates).
+            xStep: Aggregate step function (NULL for scalar functions).
+            xFinal: Aggregate finalization function (NULL for scalar functions).
+            destructor_callback: Destructor for pApp when function is deleted.
+
+        Returns:
+            SQLITE_OK on success, or an error code on failure.
+        """
         return self.lib.get_function[
             fn (
                 type_of(db),
@@ -1180,40 +1624,35 @@ struct _sqlite3(Movable):
                 type_of(xFunc),
                 type_of(xStep),
                 type_of(xFinal),
-                type_of(xDestroy),
+                type_of(destructor_callback),
             ) -> c_int
-        ]("sqlite3_create_function_v2")(db, zFunctionName, nArg, eTextRep, pApp, xFunc, xStep, xFinal, xDestroy)
+        ]("sqlite3_create_function_v2")(db, zFunctionName, nArg, eTextRep, pApp, xFunc, xStep, xFinal, destructor_callback)
 
     fn sqlite3_create_window_function[
-        origin: MutOrigin,
-        origin2: MutOrigin,
-        origin3: MutOrigin,
-        origin4: MutOrigin,
-        origin5: MutOrigin,
-        origin6: MutOrigin,
-        origin7: MutOrigin,
-        origin8: MutOrigin,
-        origin9: MutOrigin,
+        fn_name_origin: ImmutOrigin,
+        app_origin: MutOrigin,
+        step_origin: MutOrigin,
+        inverse_origin: MutOrigin,
     ](
         self,
         db: ExternalMutPointer[sqlite3_connection],
-        zFunctionName: UnsafeImmutPointer[c_char],
+        zFunctionName: UnsafeImmutPointer[c_char, fn_name_origin],
         nArg: c_int,
         eTextRep: c_int,
-        pApp: OpaqueMutPointer,
+        pApp: OpaqueMutPointer[app_origin],
         xStep: fn (
-            UnsafeMutPointer[sqlite3_context, origin],
+            ExternalMutPointer[sqlite3_context],
             c_int,
-            UnsafeMutPointer[UnsafeMutPointer[sqlite3_value, origin2], origin3],
+            UnsafeMutPointer[ExternalMutPointer[sqlite3_value], step_origin],
         ) -> NoneType,
-        xFinal: fn (UnsafeMutPointer[sqlite3_context, origin4]) -> NoneType,
-        xValue: fn (UnsafeMutPointer[sqlite3_context, origin5]) -> NoneType,
+        xFinal: fn (ExternalMutPointer[sqlite3_context]) -> NoneType,
+        xValue: fn (ExternalMutPointer[sqlite3_context]) -> NoneType,
         xInverse: fn (
-            UnsafeMutPointer[sqlite3_context, origin6],
+            ExternalMutPointer[sqlite3_context],
             c_int,
-            UnsafeMutPointer[UnsafeMutPointer[sqlite3_value, origin7], origin8],
+            UnsafeMutPointer[ExternalMutPointer[sqlite3_value], inverse_origin],
         ) -> NoneType,
-        xDestroy: fn (OpaqueMutPointer[origin9]) -> NoneType,
+        destructor_callback: ResultDestructorFn,
     ) -> c_int:
         return self.lib.get_function[
             fn (
@@ -1226,20 +1665,20 @@ struct _sqlite3(Movable):
                 type_of(xFinal),
                 type_of(xValue),
                 type_of(xInverse),
-                type_of(xDestroy),
+                type_of(destructor_callback),
             ) -> c_int
         ]("sqlite3_create_window_function")(
-            db, zFunctionName, nArg, eTextRep, pApp, xStep, xFinal, xValue, xInverse, xDestroy
+            db, zFunctionName, nArg, eTextRep, pApp, xStep, xFinal, xValue, xInverse, destructor_callback
         )
 
-    fn sqlite3_aggregate_count(self, ctx: UnsafeMutPointer[sqlite3_context]) -> c_int:
+    fn sqlite3_aggregate_count(self, ctx: ExternalMutPointer[sqlite3_context]) -> c_int:
         return self.lib.get_function[fn (type_of(ctx)) -> c_int]("sqlite3_aggregate_count")(ctx)
 
-    fn sqlite3_expired(self, pStmt: UnsafeMutPointer[sqlite3_stmt]) -> c_int:
+    fn sqlite3_expired(self, pStmt: ExternalMutPointer[sqlite3_stmt]) -> c_int:
         return self.lib.get_function[fn (type_of(pStmt)) -> c_int]("sqlite3_expired")(pStmt)
 
     fn sqlite3_transfer_bindings(
-        self, fromStmt: UnsafeMutPointer[sqlite3_stmt], toStmt: UnsafeMutPointer[sqlite3_stmt]
+        self, fromStmt: ExternalMutPointer[sqlite3_stmt], toStmt: ExternalMutPointer[sqlite3_stmt]
     ) -> c_int:
         return self.lib.get_function[fn (type_of(fromStmt), type_of(toStmt)) -> c_int]("sqlite3_transfer_bindings")(
             fromStmt, toStmt
@@ -1263,209 +1702,646 @@ struct _sqlite3(Movable):
             callback, arg, n
         )
 
-    fn sqlite3_value_blob(self, value: UnsafeMutPointer[sqlite3_value]) -> OpaqueMutPointer:
-        return self.lib.get_function[fn (type_of(value)) -> OpaqueMutPointer]("sqlite3_value_blob")(value)
+    fn sqlite3_value_blob(self, value: ExternalMutPointer[sqlite3_value]) -> ExternalMutPointer[NoneType]:
+        """Obtaining SQL Values - BLOB.
 
-    fn sqlite3_value_double(self, value: UnsafeMutPointer[sqlite3_value]) -> Float64:
+        This routine extracts a BLOB value from an sqlite3_value object.
+        These routines are used to extract type, size, and content information
+        from sqlite3_value objects that are passed as parameters to
+        application-defined SQL functions.
+
+        Args:
+            value: Pointer to the sqlite3_value object.
+
+        Returns:
+            Pointer to the BLOB data.
+        """
+        return self.lib.get_function[fn (type_of(value)) -> ExternalMutPointer[NoneType]]("sqlite3_value_blob")(value)
+
+    fn sqlite3_value_double(self, value: ExternalMutPointer[sqlite3_value]) -> Float64:
+        """Obtaining SQL Values - REAL.
+
+        This routine extracts a floating point value from an sqlite3_value object.
+
+        Args:
+            value: Pointer to the sqlite3_value object.
+
+        Returns:
+            The value as a double precision floating point number.
+        """
         return self.lib.get_function[fn (type_of(value)) -> Float64]("sqlite3_value_double")(value)
 
-    fn sqlite3_value_int64(self, value: UnsafeMutPointer[sqlite3_value]) -> Int64:
+    fn sqlite3_value_int64(self, value: ExternalMutPointer[sqlite3_value]) -> Int64:
+        """Obtaining SQL Values - INTEGER (64-bit).
+
+        This routine extracts a 64-bit signed integer value from an sqlite3_value object.
+
+        Args:
+            value: Pointer to the sqlite3_value object.
+
+        Returns:
+            The value as a 64-bit signed integer.
+        """
         return self.lib.get_function[fn (type_of(value)) -> Int64]("sqlite3_value_int64")(value)
 
-    fn sqlite3_value_pointer(
-        self, value: UnsafeMutPointer[sqlite3_value], typeStr: UnsafeImmutPointer[c_char]
-    ) -> OpaqueMutPointer:
-        return self.lib.get_function[fn (type_of(value), type_of(typeStr)) -> OpaqueMutPointer](
+    fn sqlite3_value_pointer[origin: ImmutOrigin](
+        self, value: ExternalMutPointer[sqlite3_value], typeStr: UnsafeImmutPointer[c_char, origin]
+    ) -> ExternalMutPointer[NoneType]:
+        """Obtaining SQL Values - Pointer.
+
+        This routine extracts a pointer value from an sqlite3_value object.
+        The pointer is type-checked using the provided type string. Returns
+        NULL if the value is not a pointer or if the type string doesn't match.
+
+        Args:
+            value: Pointer to the sqlite3_value object.
+            typeStr: Type identifier string for type safety.
+
+        Returns:
+            The pointer value, or NULL if not a matching pointer type.
+        """
+        return self.lib.get_function[fn (type_of(value), type_of(typeStr)) -> ExternalMutPointer[NoneType]](
             "sqlite3_value_pointer"
         )(value, typeStr)
 
-    fn sqlite3_value_text(self, value: UnsafeMutPointer[sqlite3_value]) -> ExternalImmutPointer[c_uchar]:
+    fn sqlite3_value_text(self, value: ExternalMutPointer[sqlite3_value]) -> ExternalImmutPointer[c_uchar]:
+        """Obtaining SQL Values - TEXT.
+
+        This routine extracts a UTF-8 text value from an sqlite3_value object.
+
+        Args:
+            value: Pointer to the sqlite3_value object.
+
+        Returns:
+            Pointer to the UTF-8 encoded text.
+        """
         return self.lib.get_function[fn (type_of(value)) -> ExternalImmutPointer[c_uchar]]("sqlite3_value_text")(value)
 
-    fn sqlite3_value_bytes(self, value: UnsafeMutPointer[sqlite3_value]) -> c_int:
+    fn sqlite3_value_bytes(self, value: ExternalMutPointer[sqlite3_value]) -> c_int:
+        """Size Of A BLOB Or TEXT Value In Bytes.
+
+        This routine returns the number of bytes in a BLOB or TEXT value.
+
+        Args:
+            value: Pointer to the sqlite3_value object.
+
+        Returns:
+            Number of bytes in the value.
+        """
         return self.lib.get_function[fn (type_of(value)) -> c_int]("sqlite3_value_bytes")(value)
 
-    fn sqlite3_value_type(self, value: UnsafeMutPointer[sqlite3_value]) -> c_int:
+    fn sqlite3_value_type(self, value: ExternalMutPointer[sqlite3_value]) -> c_int:
+        """Datatype Code For An sqlite3_value.
+
+        This routine returns one of SQLITE_INTEGER, SQLITE_FLOAT, SQLITE_TEXT,
+        SQLITE_BLOB, or SQLITE_NULL, indicating the datatype of the value.
+
+        Args:
+            value: Pointer to the sqlite3_value object.
+
+        Returns:
+            Datatype code.
+        """
         return self.lib.get_function[fn (type_of(value)) -> c_int]("sqlite3_value_type")(value)
 
-    fn sqlite3_value_nochange(self, value: UnsafeMutPointer[sqlite3_value]) -> c_int:
+    fn sqlite3_value_nochange(self, value: ExternalMutPointer[sqlite3_value]) -> c_int:
+        """Detect Unchanged Columns In An UPDATE.
+
+        This routine returns true if and only if the column corresponding to
+        the sqlite3_value is unchanged in an UPDATE operation. This is used
+        within update hooks to determine which columns were actually modified.
+
+        Args:
+            value: Pointer to the sqlite3_value object.
+
+        Returns:
+            Non-zero if the column is unchanged, zero otherwise.
+        """
         return self.lib.get_function[fn (type_of(value)) -> c_int]("sqlite3_value_nochange")(value)
 
-    fn sqlite3_value_subtype(self, value: UnsafeMutPointer[sqlite3_value]) -> c_uint:
+    fn sqlite3_value_subtype(self, value: ExternalMutPointer[sqlite3_value]) -> c_uint:
+        """Finding The Subtype Of SQL Values.
+
+        This routine returns the subtype for an application-defined SQL function
+        argument. The subtype information can be used to pass a limited amount
+        of context from one SQL function to another.
+
+        Args:
+            value: Pointer to the sqlite3_value object.
+
+        Returns:
+            The subtype value, or 0 if no subtype is set.
+        """
         return self.lib.get_function[fn (type_of(value)) -> c_uint]("sqlite3_value_subtype")(value)
 
-    fn sqlite3_aggregate_context(self, ctx: UnsafeMutPointer[sqlite3_context], nBytes: c_int) -> OpaqueMutPointer:
-        return self.lib.get_function[fn (type_of(ctx), /, nBytes: c_int) -> OpaqueMutPointer](
+    fn sqlite3_aggregate_context(self, ctx: ExternalMutPointer[sqlite3_context], nBytes: c_int) -> ExternalMutPointer[NoneType]:
+        """Aggregate Function Context.
+
+        This routine returns a pointer to memory that is unique to the aggregate
+        SQL function currently being executed. On the first call, SQLite allocates
+        nBytes of memory, zeroes it out, and returns a pointer to it. On subsequent
+        calls, the same pointer is returned. This memory is automatically freed
+        when the aggregate function finishes.
+
+        This routine is used by aggregate functions to maintain state information
+        across multiple invocations of the step function.
+
+        Args:
+            ctx: SQL function context pointer.
+            nBytes: Number of bytes of memory to allocate on first call.
+
+        Returns:
+            Pointer to aggregate context memory.
+        """
+        return self.lib.get_function[fn (type_of(ctx), /, nBytes: c_int) -> ExternalMutPointer[NoneType]](
             "sqlite3_aggregate_context"
         )(ctx, nBytes)
 
-    fn sqlite3_user_data(self, ctx: UnsafeMutPointer[sqlite3_context]) -> OpaqueMutPointer:
-        return self.lib.get_function[fn (type_of(ctx)) -> OpaqueMutPointer]("sqlite3_user_data")(ctx)
+    fn sqlite3_user_data(self, ctx: ExternalMutPointer[sqlite3_context]) -> ExternalMutPointer[NoneType]:
+        """User Data For Functions.
+
+        This routine returns a copy of the pointer that was the pUserData parameter
+        (the 5th parameter) of the sqlite3_create_function() or
+        sqlite3_create_function16() routine that originally registered the
+        application defined function.
+
+        This routine can be used to retrieve user-specific data that was passed
+        when the SQL function was created.
+
+        Args:
+            ctx: SQL function context pointer.
+
+        Returns:
+            User data pointer that was passed during function creation.
+        """
+        return self.lib.get_function[fn (type_of(ctx)) -> ExternalMutPointer[NoneType]]("sqlite3_user_data")(ctx)
 
     fn sqlite3_context_db_handle(
-        self, ctx: UnsafeMutPointer[sqlite3_context]
+        self, ctx: ExternalMutPointer[sqlite3_context]
     ) -> ExternalMutPointer[sqlite3_connection]:
+        """Database Connection For Functions.
+
+        This routine returns a copy of the pointer to the database connection
+        (the 1st parameter) of the sqlite3_create_function() or
+        sqlite3_create_function16() routine that originally registered the
+        application defined function.
+
+        Args:
+            ctx: SQL function context pointer.
+
+        Returns:
+            Database connection handle.
+        """
         return self.lib.get_function[fn (type_of(ctx)) -> ExternalMutPointer[sqlite3_connection]](
             "sqlite3_context_db_handle"
         )(ctx)
 
-    fn sqlite3_get_auxdata(self, ctx: UnsafeMutPointer[sqlite3_context], N: c_int) -> OpaqueMutPointer:
-        return self.lib.get_function[fn (type_of(ctx), type_of(N)) -> OpaqueMutPointer]("sqlite3_get_auxdata")(ctx, N)
+    fn sqlite3_get_auxdata(self, ctx: ExternalMutPointer[sqlite3_context], N: c_int) -> ExternalMutPointer[NoneType]:
+        """Function Auxiliary Data.
+
+        This routine returns a pointer to metadata that was previously saved
+        by sqlite3_set_auxdata() for the N-th argument of the function. If no
+        metadata has been set for that argument, this routine returns NULL.
+
+        Auxiliary data is useful for caching information between multiple
+        invocations of the same SQL function within a single statement.
+
+        Args:
+            ctx: SQL function context pointer.
+            N: Argument index (0-based).
+
+        Returns:
+            Auxiliary data pointer, or NULL if none was set.
+        """
+        return self.lib.get_function[fn (type_of(ctx), type_of(N)) -> ExternalMutPointer[NoneType]]("sqlite3_get_auxdata")(ctx, N)
 
     fn sqlite3_set_auxdata[
-        origin: MutOrigin
+        data_origin: MutOrigin,
     ](
         self,
-        ctx: UnsafeMutPointer[sqlite3_context],
+        ctx: ExternalMutPointer[sqlite3_context],
         N: c_int,
-        data: OpaqueMutPointer,
-        destructor: fn (OpaqueMutPointer[origin]) -> NoneType,
+        data: OpaqueMutPointer[data_origin],
+        destructor_callback: ResultDestructorFn,
     ) -> NoneType:
-        return self.lib.get_function[fn (type_of(ctx), type_of(N), type_of(data), type_of(destructor)) -> NoneType](
+        """Function Auxiliary Data.
+
+        This routine saves metadata (auxiliary data) for the N-th argument of
+        the SQL function. The metadata can be retrieved later using
+        sqlite3_get_auxdata(). The destructor_callback callback is invoked when the
+        metadata is no longer needed.
+
+        This is useful for caching expensive computations or parsed data
+        structures that can be reused across multiple function calls.
+    
+        Args:
+            ctx: SQL function context pointer.
+            N: Argument index (0-based).
+            data: Pointer to auxiliary data to save.
+            destructor_callback: Function to call when data should be freed.
+        """
+        return self.lib.get_function[fn (type_of(ctx), type_of(N), type_of(data), type_of(destructor_callback)) -> NoneType](
             "sqlite3_set_auxdata"
-        )(ctx, N, data, destructor)
+        )(ctx, N, data, destructor_callback)
 
     fn sqlite3_result_blob64[
-        origin: MutOrigin
+        origin: MutOrigin,
     ](
         self,
-        ctx: UnsafeMutPointer[sqlite3_context],
-        value: OpaqueMutPointer,
+        ctx: ExternalMutPointer[sqlite3_context],
+        value: OpaqueMutPointer[origin],
         n: UInt64,
-        destructor: fn (OpaqueMutPointer[origin]) -> NoneType,
+        destructor_callback: ResultDestructorFn,
     ) -> NoneType:
-        return self.lib.get_function[fn (type_of(ctx), type_of(value), type_of(n), type_of(destructor)) -> NoneType](
-            "sqlite3_result_blob64"
-        )(ctx, value, n, destructor)
+        """Setting The Result Of An SQL Function - BLOB (64-bit).
 
-    fn sqlite3_result_double(self, ctx: UnsafeMutPointer[sqlite3_context], value: Float64) -> NoneType:
+        This routine sets the result of an application-defined SQL function to
+        be a BLOB value. The size is specified as a 64-bit value, allowing for
+        very large BLOBs. The destructor_callback callback is invoked to dispose of the
+        BLOB after SQLite is done with it.
+
+        Args:
+            ctx: SQL function context pointer.
+            value: Pointer to BLOB data.
+            n: Size of BLOB in bytes (64-bit).
+            destructor_callback: Function to call when SQLite is done with the BLOB.
+        """
+        return self.lib.get_function[fn (type_of(ctx), type_of(value), type_of(n), type_of(destructor_callback)) -> NoneType](
+            "sqlite3_result_blob64"
+        )(ctx, value, n, destructor_callback)
+
+    fn sqlite3_result_double(self, ctx: ExternalMutPointer[sqlite3_context], value: Float64) -> NoneType:
+        """Setting The Result Of An SQL Function - REAL.
+
+        This routine sets the result of an application-defined SQL function to
+        be a floating point value.
+
+        Args:
+            ctx: SQL function context pointer.
+            value: The floating point value to return.
+        """
         return self.lib.get_function[fn (type_of(ctx), type_of(value)) -> NoneType]("sqlite3_result_double")(ctx, value)
 
-    fn sqlite3_result_error(
-        self, ctx: UnsafeMutPointer[sqlite3_context], msg: UnsafeImmutPointer[c_char], n: c_int
-    ) -> NoneType:
-        return self.lib.get_function[fn (type_of(ctx), type_of(msg), type_of(n)) -> NoneType]("sqlite3_result_error")(
+    fn sqlite3_result_error[origin: ImmutOrigin](
+        self, ctx: ExternalMutPointer[sqlite3_context], msg: UnsafeImmutPointer[c_char, origin], n: c_int
+    ):
+        """Setting The Result Of An SQL Function - Error.
+
+        This routine causes the SQL function to terminate with an error. The
+        error message is copied into memory obtained from sqlite3_malloc() so
+        the original error message string can be deallocated after this routine
+        returns.
+
+        Args:
+            ctx: SQL function context pointer.
+            msg: Error message text (UTF-8).
+            n: Length of error message in bytes, or -1 for null-terminated.
+        """
+        self.lib.get_function[fn (type_of(ctx), type_of(msg), type_of(n)) -> NoneType]("sqlite3_result_error")(
             ctx, msg, n
         )
 
-    fn sqlite3_result_error_toobig(self, ctx: UnsafeMutPointer[sqlite3_context]) -> NoneType:
+    fn sqlite3_result_error_toobig(self, ctx: ExternalMutPointer[sqlite3_context]) -> NoneType:
+        """Setting The Result Of An SQL Function - SQLITE_TOOBIG Error.
+
+        This routine causes the SQL function to terminate with the error code
+        SQLITE_TOOBIG, indicating that a string or BLOB is too large.
+
+        Args:
+            ctx: SQL function context pointer.
+        """
         return self.lib.get_function[fn (type_of(ctx)) -> NoneType]("sqlite3_result_error_toobig")(ctx)
 
-    fn sqlite3_result_error_nomem(self, ctx: UnsafeMutPointer[sqlite3_context]) -> NoneType:
+    fn sqlite3_result_error_nomem(self, ctx: ExternalMutPointer[sqlite3_context]) -> NoneType:
+        """Setting The Result Of An SQL Function - SQLITE_NOMEM Error.
+
+        This routine causes the SQL function to terminate with the error code
+        SQLITE_NOMEM, indicating an out-of-memory condition.
+
+        Args:
+            ctx: SQL function context pointer.
+        """
         return self.lib.get_function[fn (type_of(ctx)) -> NoneType]("sqlite3_result_error_nomem")(ctx)
 
-    fn sqlite3_result_error_code(self, ctx: UnsafeMutPointer[sqlite3_context], code: c_int) -> NoneType:
+    fn sqlite3_result_error_code(self, ctx: ExternalMutPointer[sqlite3_context], code: c_int) -> NoneType:
+        """Setting The Result Of An SQL Function - Error Code.
+
+        This routine changes the error code returned by the SQL function. By
+        default, functions return SQLITE_ERROR, but this can be changed to any
+        valid error code using this function.
+
+        Args:
+            ctx: SQL function context pointer.
+            code: Error code to return (e.g., SQLITE_CONSTRAINT, SQLITE_BUSY).
+        """
         return self.lib.get_function[fn (type_of(ctx), type_of(code)) -> NoneType]("sqlite3_result_error_code")(
             ctx, code
         )
 
-    fn sqlite3_result_int64(self, ctx: UnsafeMutPointer[sqlite3_context], value: Int64) -> NoneType:
+    fn sqlite3_result_int64(self, ctx: ExternalMutPointer[sqlite3_context], value: Int64) -> NoneType:
+        """Setting The Result Of An SQL Function - INTEGER (64-bit).
+
+        This routine sets the result of an application-defined SQL function to
+        be a 64-bit signed integer value.
+
+        Args:
+            ctx: SQL function context pointer.
+            value: The 64-bit integer value to return.
+        """
         return self.lib.get_function[fn (type_of(ctx), type_of(value)) -> NoneType]("sqlite3_result_int64")(ctx, value)
 
-    fn sqlite3_result_null(self, ctx: UnsafeMutPointer[sqlite3_context]) -> NoneType:
+    fn sqlite3_result_null(self, ctx: ExternalMutPointer[sqlite3_context]) -> NoneType:
+        """Setting The Result Of An SQL Function - NULL.
+
+        This routine sets the result of an application-defined SQL function to
+        be NULL.
+
+        Args:
+            ctx: SQL function context pointer.
+        """
         return self.lib.get_function[fn (type_of(ctx)) -> NoneType]("sqlite3_result_null")(ctx)
 
     fn sqlite3_result_text64[
-        origin: MutOrigin
+        value_origin: ImmutOrigin,
     ](
         self,
-        ctx: UnsafeMutPointer[sqlite3_context],
-        value: UnsafeImmutPointer[c_char],
+        ctx: ExternalMutPointer[sqlite3_context],
+        value: UnsafeImmutPointer[c_char, value_origin],
         n: UInt64,
-        destructor: fn (OpaqueMutPointer[origin]) -> NoneType,
         encoding: c_uchar,
+        destructor_callback: ResultDestructorFn,
     ) -> NoneType:
+        """Setting The Result Of An SQL Function - TEXT (64-bit).
+
+        This routine sets the result of an application-defined SQL function to
+        be a text value. The text size is specified as a 64-bit value, allowing
+        for very large text strings. The encoding parameter specifies the text
+        encoding (UTF-8 or UTF-16). The destructor_callback callback is invoked to
+        dispose of the text after SQLite is done with it.
+
+        Params:
+            destructor_callback: Function to call when SQLite is done with the text.
+
+        Args:
+            ctx: SQL function context pointer.
+            value: Pointer to text data.
+            n: Length of text in bytes (64-bit).
+            encoding: Text encoding (SQLITE_UTF8 or SQLITE_UTF16).
+        """
         return self.lib.get_function[
-            fn (type_of(ctx), type_of(value), type_of(n), type_of(destructor), type_of(encoding)) -> NoneType
-        ]("sqlite3_result_text64")(ctx, value, n, destructor, encoding)
+            fn (type_of(ctx), type_of(value), type_of(n), type_of(destructor_callback), type_of(encoding)) -> NoneType
+        ]("sqlite3_result_text64")(ctx, value, n, destructor_callback, encoding)
 
     fn sqlite3_result_value(
-        self, ctx: UnsafeMutPointer[sqlite3_context], value: UnsafeMutPointer[sqlite3_value]
+        self, ctx: ExternalMutPointer[sqlite3_context], value: ExternalMutPointer[sqlite3_value]
     ) -> NoneType:
+        """Setting The Result Of An SQL Function - Value Copy.
+
+        This routine sets the result of an application-defined SQL function to
+        be a copy of the value object passed as the second argument. This is
+        useful for passing through values from arguments to results without
+        type conversion.
+
+        Args:
+            ctx: SQL function context pointer.
+            value: Value object to copy as the result.
+        """
         return self.lib.get_function[fn (type_of(ctx), type_of(value)) -> NoneType]("sqlite3_result_value")(ctx, value)
 
     fn sqlite3_result_pointer[
-        origin: MutOrigin
+        ptr_origin: MutOrigin,
+        type_origin: ImmutOrigin,
     ](
         self,
-        ctx: UnsafeMutPointer[sqlite3_context],
-        ptr: OpaqueMutPointer,
-        typeStr: UnsafeImmutPointer[c_char],
-        destructor: fn (OpaqueMutPointer[origin]) -> NoneType,
-    ) -> NoneType:
-        return self.lib.get_function[
-            fn (type_of(ctx), type_of(ptr), type_of(typeStr), type_of(destructor)) -> NoneType
-        ]("sqlite3_result_pointer")(ctx, ptr, typeStr, destructor)
+        ctx: ExternalMutPointer[sqlite3_context],
+        ptr: OpaqueMutPointer[ptr_origin],
+        typeStr: UnsafeImmutPointer[c_char, type_origin],
+        destructor_callback: ResultDestructorFn,
+    ):
+        """Setting The Result Of An SQL Function - Pointer.
 
-    fn sqlite3_result_zeroblob(self, ctx: UnsafeMutPointer[sqlite3_context], n: c_int) -> NoneType:
+        This routine sets the result of an application-defined SQL function to
+        be a pointer value. The pointer is tagged with a type string for type
+        safety. The destructor_callback callback is invoked to dispose of the pointer
+        after SQLite is done with it.
+    
+        Args:
+            ctx: SQL function context pointer.
+            ptr: Pointer value to return.
+            typeStr: Type identifier string for type safety.
+            destructor_callback: Function to call when SQLite is done with the pointer.
+        """
+        self.lib.get_function[
+            fn (type_of(ctx), type_of(ptr), type_of(typeStr), type_of(destructor_callback)) -> NoneType
+        ]("sqlite3_result_pointer")(ctx, ptr, typeStr, destructor_callback)
+
+    fn sqlite3_result_zeroblob(self, ctx: ExternalMutPointer[sqlite3_context], n: c_int) -> NoneType:
+        """Setting The Result Of An SQL Function - Zeroblob.
+
+        This routine sets the result of an application-defined SQL function to
+        be a BLOB filled with zeros. The BLOB can later be opened and written
+        to using the incremental BLOB I/O routines.
+
+        Args:
+            ctx: SQL function context pointer.
+            n: Size of the zeroblob in bytes.
+        """
         return self.lib.get_function[fn (type_of(ctx), type_of(n)) -> NoneType]("sqlite3_result_zeroblob")(ctx, n)
 
-    fn sqlite3_result_subtype(self, ctx: UnsafeMutPointer[sqlite3_context], subtype: c_uint) -> NoneType:
+    fn sqlite3_result_subtype(self, ctx: ExternalMutPointer[sqlite3_context], subtype: c_uint) -> NoneType:
+        """Setting The Subtype Of An SQL Function Result.
+
+        This routine sets the subtype of the result value of an application-defined
+        SQL function. The subtype information can be used to pass a limited amount
+        of context from one SQL function to another.
+
+        Args:
+            ctx: SQL function context pointer.
+            subtype: Subtype value to set (application-defined).
+        """
         return self.lib.get_function[fn (type_of(ctx), type_of(subtype)) -> NoneType]("sqlite3_result_subtype")(
             ctx, subtype
         )
 
     fn sqlite3_create_collation_v2[
-        origin: MutOrigin, origin2: ImmutOrigin, origin3: ImmutOrigin, origin4: MutOrigin
+        name_origin: ImmutOrigin,
+        arg_origin: MutOrigin,
+        compare_origin: MutOrigin,
+        compare_origin2: ImmutOrigin,
+        compare_origin3: ImmutOrigin,
     ](
         self,
         db: ExternalMutPointer[sqlite3_connection],
-        zName: UnsafeImmutPointer[c_char],
+        zName: UnsafeImmutPointer[c_char, name_origin],
         eTextRep: c_int,
-        pArg: OpaqueMutPointer,
+        pArg: OpaqueMutPointer[arg_origin],
         xCompare: fn (
-            OpaqueMutPointer[origin], c_int, OpaqueImmutPointer[origin2], c_int, OpaqueImmutPointer[origin3]
+            OpaqueMutPointer[compare_origin], c_int, OpaqueImmutPointer[compare_origin2], c_int, OpaqueImmutPointer[compare_origin3]
         ) -> c_int,
-        xDestroy: fn (OpaqueMutPointer[origin4]) -> NoneType,
+        destructor_callback: ResultDestructorFn,
     ) -> c_int:
+        """Define New Collating Sequences.
+
+        This routine adds, removes, or modifies a collating sequence. The
+        collating sequence is named by zName and must be specified using UTF-8,
+        UTF-16LE, or UTF-16BE encoding. The eTextRep parameter specifies the
+        encoding and determines which strings the comparison function will receive.
+
+        The xCompare callback performs the actual comparison. The destructor_callback callback
+        is invoked when the collating sequence is deleted, allowing cleanup of
+        any resources.
+
+        Args:
+            db: Database connection handle.
+            zName: Name of the collating sequence.
+            eTextRep: Text encoding (SQLITE_UTF8, SQLITE_UTF16LE, or SQLITE_UTF16BE).
+            pArg: User data pointer passed to xCompare callback.
+            xCompare: Comparison function callback.
+            destructor_callback: Destructor for pArg when collation is deleted.
+
+        Returns:
+            SQLITE_OK on success, or an error code on failure.
+        """
         return self.lib.get_function[
             fn (
-                type_of(db), type_of(zName), type_of(eTextRep), type_of(pArg), type_of(xCompare), type_of(xDestroy)
+                type_of(db), type_of(zName), type_of(eTextRep), type_of(pArg), type_of(xCompare), type_of(destructor_callback)
             ) -> c_int
-        ]("sqlite3_create_collation_v2")(db, zName, eTextRep, pArg, xCompare, xDestroy)
+        ]("sqlite3_create_collation_v2")(db, zName, eTextRep, pArg, xCompare, destructor_callback)
 
     fn sqlite3_collation_needed[
-        origin: MutOrigin, origin2: MutOrigin, origin3: ImmutOrigin
+        arg_origin: MutOrigin, cb_origin: MutOrigin, cb_origin2: ImmutOrigin
     ](
         self,
         db: ExternalMutPointer[sqlite3_connection],
-        pArg: OpaqueMutPointer,
+        pArg: OpaqueMutPointer[arg_origin],
         callback: fn (
-            OpaqueMutPointer[origin],
-            UnsafeMutPointer[sqlite3_connection, origin2],
+            OpaqueMutPointer[cb_origin],
+            ExternalMutPointer[sqlite3_connection],
             c_int,
-            UnsafeImmutPointer[c_char, origin3],
+            UnsafeImmutPointer[c_char, cb_origin2],
         ) -> NoneType,
     ) -> c_int:
+        """Collation Needed Callbacks.
+
+        This routine registers a callback function that is invoked whenever an
+        unknown collating sequence is encountered. The callback can then create
+        the required collating sequence using sqlite3_create_collation(). This
+        allows applications to provide collating sequences on demand rather than
+        pre-registering all possible collations.
+
+        Args:
+            db: Database connection handle.
+            pArg: User data pointer passed to callback.
+            callback: Function to call when an unknown collation is needed.
+
+        Returns:
+            SQLITE_OK on success, or an error code on failure.
+        """
         return self.lib.get_function[fn (type_of(db), type_of(pArg), type_of(callback)) -> c_int](
             "sqlite3_collation_needed"
         )(db, pArg, callback)
 
     fn sqlite3_soft_heap_limit(self, n: c_int) -> c_int:
+        """Deprecated Soft Heap Limit.
+
+        This routine is deprecated. Use sqlite3_soft_heap_limit64() instead.
+        This routine sets a soft limit on the amount of heap memory that may
+        be allocated by SQLite.
+
+        Args:
+            n: Soft heap limit in bytes.
+
+        Returns:
+            Previous soft heap limit.
+        """
         return self.lib.get_function[fn (type_of(n)) -> c_int]("sqlite3_soft_heap_limit")(n)
 
     fn sqlite3_soft_heap_limit64(self, n: Int64) -> Int64:
+        """Impose A Limit On Heap Size.
+
+        This routine sets and/or queries the soft limit on the amount of heap
+        memory that may be allocated by SQLite. SQLite strives to keep heap
+        memory below the soft limit by reducing the number of pages held in
+        the page cache. If n is negative, then the soft heap limit is disabled.
+
+        Args:
+            n: New soft heap limit in bytes (-1 to disable, 0 to query only).
+
+        Returns:
+            Previous soft heap limit.
+        """
         return self.lib.get_function[fn (type_of(n)) -> Int64]("sqlite3_soft_heap_limit64")(n)
 
-    fn sqlite3_stmt_status(self, pStmt: UnsafeMutPointer[sqlite3_stmt], op: c_int, resetFlg: c_int) -> c_int:
+    fn sqlite3_stmt_status(self, pStmt: ExternalMutPointer[sqlite3_stmt], op: c_int, resetFlg: c_int) -> c_int:
+        """Prepared Statement Status.
+
+        This routine is used to retrieve runtime status information about a
+        prepared statement. The op parameter determines which status counter to
+        retrieve. Common counters include:
+        - SQLITE_STMTSTATUS_FULLSCAN_STEP: Number of fullscan steps
+        - SQLITE_STMTSTATUS_SORT: Number of sort operations
+        - SQLITE_STMTSTATUS_AUTOINDEX: Number of automatic indexes created
+        - SQLITE_STMTSTATUS_VM_STEP: Number of virtual machine steps
+
+        Args:
+            pStmt: Pointer to the prepared statement.
+            op: Status counter to retrieve.
+            resetFlg: If non-zero, reset the counter after reading.
+
+        Returns:
+            Current value of the requested status counter.
+        """
         return self.lib.get_function[fn (type_of(pStmt), type_of(op), type_of(resetFlg)) -> c_int](
             "sqlite3_stmt_status"
         )(pStmt, op, resetFlg)
 
     fn sqlite3_table_column_metadata[
-        origin: ImmutOrigin, origin2: ImmutOrigin
+        db_name_origin: ImmutOrigin,
+        table_name_origin: ImmutOrigin,
+        column_name_origin: ImmutOrigin,
+        dt_origin: ImmutOrigin,
+        dt_origin2: MutOrigin,
+        cs_origin: ImmutOrigin,
+        cs_origin2: MutOrigin,
+        null_origin: MutOrigin,
+        pk_origin: MutOrigin,
+        ai_origin: MutOrigin,
     ](
         self,
         db: ExternalMutPointer[sqlite3_connection],
-        zDbName: UnsafeImmutPointer[c_char],
-        zTableName: UnsafeImmutPointer[c_char],
-        zColumnName: UnsafeImmutPointer[c_char],
-        pzDataType: UnsafeMutPointer[UnsafeImmutPointer[c_char, origin]],
-        pzCollSeq: UnsafeMutPointer[UnsafeImmutPointer[c_char, origin2]],
-        pNotNull: UnsafeMutPointer[c_int],
-        pPrimaryKey: UnsafeMutPointer[c_int],
-        pAutoinc: UnsafeMutPointer[c_int],
+        zDbName: UnsafeImmutPointer[c_char, db_name_origin],
+        zTableName: UnsafeImmutPointer[c_char, table_name_origin],
+        zColumnName: UnsafeImmutPointer[c_char, column_name_origin],
+        pzDataType: UnsafeMutPointer[UnsafeImmutPointer[c_char, dt_origin], dt_origin2],
+        pzCollSeq: UnsafeMutPointer[UnsafeImmutPointer[c_char, cs_origin], cs_origin2],
+        pNotNull: UnsafeMutPointer[c_int, null_origin],
+        pPrimaryKey: UnsafeMutPointer[c_int, pk_origin],
+        pAutoinc: UnsafeMutPointer[c_int, ai_origin],
     ) -> c_int:
+        """Extract Metadata About A Column Of A Table.
+
+        This routine returns metadata about a specific column of a specific table
+        in a database. The returned information includes the data type, collating
+        sequence, whether the column can be NULL, whether it is part of the primary
+        key, and whether it is autoincrement.
+
+        This routine requires that SQLite be compiled with the
+        SQLITE_ENABLE_COLUMN_METADATA preprocessor symbol.
+
+        Args:
+            db: Database connection handle.
+            zDbName: Database name (e.g., "main", "temp").
+            zTableName: Table name.
+            zColumnName: Column name.
+            pzDataType: OUT: Data type name.
+            pzCollSeq: OUT: Collation sequence name.
+            pNotNull: OUT: True if column has NOT NULL constraint.
+            pPrimaryKey: OUT: True if column is part of primary key.
+            pAutoinc: OUT: True if column is AUTOINCREMENT.
+
+        Returns:
+            SQLITE_OK on success, or an error code on failure.
+        """
         return self.lib.get_function[
             fn (
                 type_of(db),
@@ -1483,142 +2359,412 @@ struct _sqlite3(Movable):
         )
 
     fn sqlite3_load_extension[
-        origin: MutOrigin
+        file_origin: ImmutOrigin,
+        proc_origin: ImmutOrigin,
+        err_msg_origin: MutOrigin,
+        err_msg_origin2: MutOrigin,
     ](
         self,
         db: ExternalMutPointer[sqlite3_connection],
-        zFile: UnsafeImmutPointer[c_char],
-        zProc: UnsafeImmutPointer[c_char],
-        pzErrMsg: UnsafeMutPointer[UnsafeMutPointer[c_char, origin]],
+        zFile: UnsafeImmutPointer[c_char, file_origin],
+        zProc: UnsafeImmutPointer[c_char, proc_origin],
+        pzErrMsg: UnsafeMutPointer[UnsafeMutPointer[c_char, err_msg_origin], err_msg_origin2],
     ) -> c_int:
+        """Load An Extension.
+
+        This routine attempts to load an SQLite extension library from the file
+        named by zFile. If zProc is not NULL, it is the name of the entry point
+        to use for loading the extension. If zProc is NULL, SQLite uses a default
+        entry point name. If an error occurs, an error message is returned via
+        pzErrMsg (which must be freed using sqlite3_free()).
+
+        Extension loading must be enabled using sqlite3_enable_load_extension()
+        before this function can be called.
+
+        Args:
+            db: Database connection handle.
+            zFile: Path to the extension library file.
+            zProc: Entry point name (NULL for default).
+            pzErrMsg: OUT: Error message pointer (must be freed with sqlite3_free).
+
+        Returns:
+            SQLITE_OK on success, or an error code on failure.
+        """
         return self.lib.get_function[fn (type_of(db), type_of(zFile), type_of(zProc), type_of(pzErrMsg)) -> c_int](
             "sqlite3_load_extension"
         )(db, zFile, zProc, pzErrMsg)
 
     fn sqlite3_enable_load_extension(self, db: ExternalMutPointer[sqlite3_connection], onoff: c_int) -> c_int:
+        """Enable Or Disable Extension Loading.
+
+        This routine enables or disables the sqlite3_load_extension() interface.
+        Extension loading is off by default for security reasons. An application
+        must explicitly enable extension loading before extensions can be loaded.
+
+        Args:
+            db: Database connection handle.
+            onoff: 1 to enable extension loading, 0 to disable.
+
+        Returns:
+            SQLITE_OK on success, or an error code on failure.
+        """
         return self.lib.get_function[fn (type_of(db), c_int) -> c_int]("sqlite3_enable_load_extension")(db, onoff)
 
-    fn sqlite3_win32_set_directory(self, type: c_ulong, zValue: OpaqueMutPointer) -> c_int:
-        return self.lib.get_function[fn (type_of(type), type_of(zValue)) -> c_int]("sqlite3_win32_set_directory")(
-            type, zValue
-        )
-
-    fn sqlite3_win32_set_directory8(self, type: c_ulong, zValue: UnsafeImmutPointer[c_char]) -> c_int:
-        return self.lib.get_function[fn (type_of(type), type_of(zValue)) -> c_int]("sqlite3_win32_set_directory8")(
-            type, zValue
-        )
-
     fn sqlite3_get_autocommit(self, db: ExternalMutPointer[sqlite3_connection]) -> c_int:
+        """Test For Auto-Commit Mode.
+
+        This routine returns non-zero if the database connection is in
+        autocommit mode. Autocommit mode is on by default. Autocommit mode
+        is disabled by a BEGIN statement and re-enabled by a COMMIT or ROLLBACK.
+
+        Args:
+            db: Database connection handle.
+
+        Returns:
+            Non-zero if in autocommit mode, zero otherwise.
+        """
         return self.lib.get_function[fn (type_of(db)) -> c_int]("sqlite3_get_autocommit")(db)
 
-    fn sqlite3_db_handle(self, pStmt: UnsafeMutPointer[sqlite3_stmt]) -> ExternalMutPointer[sqlite3_connection]:
+    fn sqlite3_db_handle(self, pStmt: ExternalMutPointer[sqlite3_stmt]) -> ExternalMutPointer[sqlite3_connection]:
+        """Find The Database Handle Of A Prepared Statement.
+
+        This routine returns the database connection pointer that was used to
+        create the prepared statement using sqlite3_prepare_v2() or its variants.
+
+        Args:
+            pStmt: Pointer to the prepared statement.
+
+        Returns:
+            Database connection handle that owns the statement.
+        """
         return self.lib.get_function[fn (type_of(pStmt)) -> ExternalMutPointer[sqlite3_connection]](
             "sqlite3_db_handle"
         )(pStmt)
 
     fn sqlite3_db_name(self, db: ExternalMutPointer[sqlite3_connection], N: c_int) -> ExternalImmutPointer[c_char]:
+        """Return The Schema Name For A Database.
+
+        This routine returns the schema name for the N-th database on the
+        database connection. The main database file has index 0, the temp
+        database has index 1. Additional databases (attached via ATTACH)
+        have indices starting at 2.
+
+        Args:
+            db: Database connection handle.
+            N: Database index (0 for main, 1 for temp, 2+ for attached).
+
+        Returns:
+            Pointer to the schema name, or NULL if N is out of range.
+        """
         return self.lib.get_function[fn (type_of(db), type_of(N)) -> ExternalImmutPointer[c_char]]("sqlite3_db_name")(
             db, N
         )
 
-    fn sqlite3_db_filename(
-        self, db: ExternalMutPointer[sqlite3_connection], zDbName: UnsafeImmutPointer[c_char]
+    fn sqlite3_db_filename[origin: ImmutOrigin](
+        self, db: ExternalMutPointer[sqlite3_connection], zDbName: UnsafeImmutPointer[c_char, origin]
     ) -> ExternalImmutPointer[c_char]:
+        """Return The Filename For A Database.
+
+        This routine returns the filename for the database schema specified
+        by zDbName. The filename is returned as UTF-8. If the schema does
+        not exist or if it is an in-memory or temporary database, this
+        routine returns NULL.
+
+        Args:
+            db: Database connection handle.
+            zDbName: Name of the database schema.
+
+        Returns:
+            Pointer to the filename, or NULL if not found.
+        """
         return self.lib.get_function[fn (type_of(db), type_of(zDbName)) -> ExternalImmutPointer[c_char]]("sqlite3_db_filename")(
             db, zDbName
         )
 
-    fn sqlite3_db_readonly(
-        self, db: ExternalMutPointer[sqlite3_connection], zDbName: UnsafeImmutPointer[c_char]
+    fn sqlite3_db_readonly[origin: ImmutOrigin](
+        self, db: ExternalMutPointer[sqlite3_connection], zDbName: UnsafeImmutPointer[c_char, origin]
     ) -> c_int:
+        """Determine If A Database Is Read-Only.
+
+        This routine returns 1 if the database is read-only, 0 if it is
+        read-write, or -1 if the zDbName is not the name of a database on
+        connection db.
+
+        Args:
+            db: Database connection handle.
+            zDbName: Name of the database schema to check.
+
+        Returns:
+            1 if read-only, 0 if read-write, -1 if not found.
+        """
         return self.lib.get_function[fn (type_of(db), type_of(zDbName)) -> c_int]("sqlite3_db_readonly")(db, zDbName)
 
-    fn sqlite3_txn_state(
-        self, db: ExternalMutPointer[sqlite3_connection], /, zSchema: UnsafeImmutPointer[c_char]
+    fn sqlite3_txn_state[origin: ImmutOrigin](
+        self, db: ExternalMutPointer[sqlite3_connection], zSchema: UnsafeImmutPointer[c_char, origin]
     ) -> c_int:
+        """Determine The Transaction State Of A Database.
+
+        This routine returns the current transaction state of schema zSchema
+        in database connection db. The return value is one of:
+        - SQLITE_TXN_NONE: No transaction is currently active
+        - SQLITE_TXN_READ: A read transaction is active
+        - SQLITE_TXN_WRITE: A write transaction is active
+
+        Args:
+            db: Database connection handle.
+            zSchema: Name of the schema to query (NULL for main database).
+
+        Returns:
+            The transaction state code.
+        """
         return self.lib.get_function[fn (type_of(db), type_of(zSchema)) -> c_int]("sqlite3_txn_state")(db, zSchema)
 
     fn sqlite3_next_stmt(
-        self, pDb: ExternalMutPointer[sqlite3_connection], pStmt: UnsafeMutPointer[sqlite3_stmt]
+        self, pDb: ExternalMutPointer[sqlite3_connection], pStmt: ExternalMutPointer[sqlite3_stmt]
     ) -> ExternalMutPointer[sqlite3_stmt]:
+        """Find The Next Prepared Statement.
+
+        This interface returns a pointer to the next prepared statement after
+        pStmt associated with database connection pDb. If pStmt is NULL then
+        this interface returns a pointer to the first prepared statement
+        associated with the database connection. Returns NULL if there are
+        no (more) prepared statements.
+
+        Args:
+            pDb: Database connection handle.
+            pStmt: Current statement pointer (NULL to get first statement).
+
+        Returns:
+            Pointer to next prepared statement, or NULL if none.
+        """
         return self.lib.get_function[fn (type_of(pDb), type_of(pStmt)) -> ExternalMutPointer[sqlite3_stmt]](
             "sqlite3_next_stmt"
         )(pDb, pStmt)
 
-    fn sqlite3_update_hook(
+    fn sqlite3_update_hook[
+        cb_origin: MutOrigin,
+        cb_fn_origin: MutOrigin,
+        cb_fn_origin2: MutOrigin,
+        cb_fn_origin3: MutOrigin,
+        arg_origin: MutOrigin,
+    ](
         self,
         db: ExternalMutPointer[sqlite3_connection],
         xCallback: UnsafeMutPointer[
-            fn (OpaqueMutPointer, c_int, UnsafeMutPointer[c_char], UnsafeMutPointer[c_char], Int64)
+            fn (OpaqueMutPointer[cb_fn_origin], c_int, UnsafeMutPointer[c_char, cb_fn_origin2], UnsafeMutPointer[c_char, cb_fn_origin3], Int64),
+            cb_origin
         ],
-        pArg: OpaqueMutPointer,
+        pArg: OpaqueMutPointer[arg_origin],
     ) -> None:
+        """Data Change Notification Callbacks.
+
+        This routine registers a callback function with the database connection
+        that is invoked whenever a row is updated, inserted, or deleted in a
+        rowid table. The callback is invoked before the change is committed.
+        The callback receives the operation type (INSERT, UPDATE, or DELETE),
+        database name, table name, and rowid of the affected row.
+
+        Args:
+            db: Database connection handle.
+            xCallback: Callback function to invoke on data changes.
+            pArg: User data pointer passed to callback.
+        """
         self.lib.get_function[fn (type_of(db), type_of(xCallback), type_of(pArg)) -> None]("sqlite3_update_hook")(
             db, xCallback, pArg
         )
 
-    fn sqlite3_commit_hook(
+    fn sqlite3_commit_hook[
+        cb_origin: MutOrigin,
+        cb_fn_origin: MutOrigin,
+        arg_origin: MutOrigin,
+    ](
         self,
         db: ExternalMutPointer[sqlite3_connection],
-        xCallback: UnsafeMutPointer[fn (OpaqueMutPointer) -> c_int],
-        pArg: OpaqueMutPointer,
-    ) -> OpaqueMutPointer:
-        return self.lib.get_function[fn (type_of(db), type_of(xCallback), type_of(pArg)) -> OpaqueMutPointer](
+        xCallback: UnsafeMutPointer[fn (OpaqueMutPointer[cb_fn_origin]) -> c_int, cb_origin],
+        pArg: OpaqueMutPointer[arg_origin],
+    ) -> ExternalMutPointer[NoneType]:
+        """Commit And Rollback Notification Callbacks.
+
+        This routine registers a callback function to be invoked whenever a
+        transaction is committed. The callback can return non-zero to convert
+        the commit into a rollback. This is useful for implementing custom
+        constraints or synchronization logic.
+
+        Args:
+            db: Database connection handle.
+            xCallback: Callback function invoked before commit.
+            pArg: User data pointer passed to callback.
+
+        Returns:
+            Previously registered user data pointer.
+        """
+        return self.lib.get_function[fn (type_of(db), type_of(xCallback), type_of(pArg)) -> ExternalMutPointer[NoneType]](
             "sqlite3_commit_hook"
         )(db, xCallback, pArg)
 
-    fn sqlite3_rollback_hook(
+    fn sqlite3_rollback_hook[
+        cb_origin: MutOrigin,
+        cb_fn_origin: MutOrigin,
+        arg_origin: MutOrigin,
+    ](
         self,
         db: ExternalMutPointer[sqlite3_connection],
-        xCallback: UnsafeMutPointer[fn (OpaqueMutPointer)],
-        pArg: OpaqueMutPointer,
-    ) -> OpaqueMutPointer:
-        return self.lib.get_function[fn (type_of(db), type_of(xCallback), type_of(pArg)) -> OpaqueMutPointer](
+        xCallback: UnsafeMutPointer[fn (OpaqueMutPointer[cb_fn_origin]), cb_origin],
+        pArg: OpaqueMutPointer[arg_origin],
+    ) -> ExternalMutPointer[NoneType]:
+        """Commit And Rollback Notification Callbacks.
+
+        This routine registers a callback function to be invoked whenever a
+        transaction is rolled back. The callback is invoked after the rollback
+        has completed. This is useful for cleanup or logging purposes.
+
+        Args:
+            db: Database connection handle.
+            xCallback: Callback function invoked after rollback.
+            pArg: User data pointer passed to callback.
+
+        Returns:
+            Previously registered user data pointer.
+        """
+        return self.lib.get_function[fn (type_of(db), type_of(xCallback), type_of(pArg)) -> ExternalMutPointer[NoneType]](
             "sqlite3_rollback_hook"
         )(db, xCallback, pArg)
 
-    fn sqlite3_auto_extension(self, xEntryPoint: UnsafeMutPointer[fn () -> c_int]) -> c_int:
+    fn sqlite3_auto_extension[origin: MutOrigin](self, xEntryPoint: UnsafeMutPointer[fn () -> c_int, origin]) -> c_int:
+        """Register An Auto-Extension.
+
+        This routine registers an extension entry point that is automatically
+        invoked whenever a new database connection is created. The extension
+        is loaded into each database connection that is created after the
+        auto-extension is registered.
+
+        Args:
+            xEntryPoint: Extension initialization function.
+
+        Returns:
+            SQLITE_OK on success, or an error code on failure.
+        """
         return self.lib.get_function[fn (type_of(xEntryPoint)) -> c_int]("sqlite3_auto_extension")(xEntryPoint)
 
     fn sqlite3_db_release_memory(self, db: ExternalMutPointer[sqlite3_connection]) -> c_int:
+        """Release Memory Used By A Database Connection.
+
+        This routine attempts to free as much heap memory as possible from
+        database connection db. This is useful when the application needs to
+        reduce memory usage temporarily without closing the database connection.
+
+        Args:
+            db: Database connection handle.
+
+        Returns:
+            SQLITE_OK on success, or an error code on failure.
+        """
         return self.lib.get_function[fn (type_of(db)) -> c_int]("sqlite3_db_release_memory")(db)
 
-    fn sqlite3_cancel_auto_extension(self, xEntryPoint: UnsafeMutPointer[fn () -> c_int]) -> c_int:
+    fn sqlite3_cancel_auto_extension[origin: MutOrigin](self, xEntryPoint: UnsafeMutPointer[fn () -> c_int, origin]) -> c_int:
+        """Cancel An Auto-Extension.
+
+        This routine unregisters an extension entry point that was previously
+        registered using sqlite3_auto_extension(). The extension will no longer
+        be automatically loaded into new database connections.
+
+        Args:
+            xEntryPoint: Extension initialization function to unregister.
+
+        Returns:
+            1 if the extension was found and canceled, 0 otherwise.
+        """
         return self.lib.get_function[fn (type_of(xEntryPoint)) -> c_int]("sqlite3_cancel_auto_extension")(xEntryPoint)
 
     fn sqlite3_reset_auto_extension(self) -> c_int:
+        """Reset The Automatic Extension Loading.
+
+        This routine disables all automatic extensions previously registered
+        using sqlite3_auto_extension(). This is useful when shutting down
+        the application or when you want to start fresh with a new set of
+        auto-extensions.
+
+        Returns:
+            Always returns SQLITE_OK.
+        """
         return self.lib.get_function[fn () -> c_int]("sqlite3_reset_auto_extension")()
     
-    fn sqlite3_create_module_v2[origin: MutOrigin](
+    fn sqlite3_create_module_v2[
+        name_origin: ImmutOrigin,
+        client_data_origin: MutOrigin,
+    ](
         self,
         db: ExternalMutPointer[sqlite3_connection],
-        zName: UnsafeImmutPointer[c_char],
-        p: UnsafeMutPointer[sqlite3_module],
-        pClientData: OpaqueMutPointer,
-        xDestroy: fn (OpaqueMutPointer[origin]) -> NoneType,
+        zName: UnsafeImmutPointer[c_char, name_origin],
+        p: ExternalMutPointer[sqlite3_module],
+        pClientData: OpaqueMutPointer[client_data_origin],
+        destructor_callback: ResultDestructorFn,
     ) -> c_int:
+        """Register A Virtual Table Implementation.
+
+        This routine is used to register a new virtual table module with a
+        database connection. Virtual tables allow applications to publish
+        application data as SQL tables. The module implementation is provided
+        via the sqlite3_module structure. The destructor_callback callback is invoked
+        when the module is unregistered.
+
+        Args:
+            db: Database connection handle.
+            zName: Name of the virtual table module.
+            p: Pointer to the module implementation structure.
+            pClientData: User data pointer passed to module methods.
+            destructor_callback: Destructor for pClientData.
+
+        Returns:
+            SQLITE_OK on success, or an error code on failure.
+        """
         return self.lib.get_function[
             fn (
                 type_of(db),
                 type_of(zName),
                 type_of(p),
                 type_of(pClientData),
-                type_of(xDestroy),
+                type_of(destructor_callback),
             ) -> c_int
-        ]("sqlite3_create_module_v2")(db, zName, p, pClientData, xDestroy)
+        ]("sqlite3_create_module_v2")(db, zName, p, pClientData, destructor_callback)
 
     fn sqlite3_blob_open[
-        origin: MutOrigin
+        db_origin: ImmutOrigin,
+        table_origin: ImmutOrigin,
+        column_origin: ImmutOrigin,
+        blob_origin: MutOrigin
     ](
         self,
         db: ExternalMutPointer[sqlite3_connection],
-        zDb: UnsafeImmutPointer[c_char],
-        zTable: UnsafeImmutPointer[c_char],
-        zColumn: UnsafeImmutPointer[c_char],
+        zDb: UnsafeImmutPointer[c_char, db_origin],
+        zTable: UnsafeImmutPointer[c_char, table_origin],
+        zColumn: UnsafeImmutPointer[c_char, column_origin],
         iRow: Int64,
         flags: c_int,
-        ppBlob: UnsafeMutPointer[UnsafeMutPointer[sqlite3_blob, origin]],
+        ppBlob: UnsafeMutPointer[ExternalMutPointer[sqlite3_blob], blob_origin],
     ) -> c_int:
+        """Open A BLOB For Incremental I/O.
+
+        This routine opens a handle to a BLOB located in row iRow, column
+        zColumn, table zTable in database zDb. The BLOB can then be read
+        or written using the incremental I/O routines. This is more efficient
+        than loading the entire BLOB into memory at once.
+
+        The flags parameter can be SQLITE_OPEN_READONLY to open the BLOB for
+        reading only, or SQLITE_OPEN_READWRITE to open it for reading and writing.
+
+        Args:
+            db: Database connection handle.
+            zDb: Name of the database containing the BLOB.
+            zTable: Name of the table containing the BLOB.
+            zColumn: Name of the column containing the BLOB.
+            iRow: Row ID of the row containing the BLOB.
+            flags: Open flags (SQLITE_OPEN_READONLY or SQLITE_OPEN_READWRITE).
+            ppBlob: OUT: BLOB handle.
+
+        Returns:
+            SQLITE_OK on success, or an error code on failure.
+        """
         return self.lib.get_function[
             fn (
                 type_of(db),
@@ -1631,105 +2777,337 @@ struct _sqlite3(Movable):
             ) -> c_int
         ]("sqlite3_blob_open")(db, zDb, zTable, zColumn, iRow, flags, ppBlob)
 
-    fn sqlite3_blob_reopen(self, pBlob: UnsafeMutPointer[sqlite3_blob], iRow: Int64) -> c_int:
+    fn sqlite3_blob_reopen(self, pBlob: ExternalMutPointer[sqlite3_blob], iRow: Int64) -> c_int:
+        """Move A BLOB Handle To A New Row.
+
+        This routine moves an existing BLOB handle so that it points to a
+        different row of the same database table. This is faster than closing
+        and reopening the BLOB handle. The new row must contain a BLOB or
+        TEXT value in the same column.
+
+        Args:
+            pBlob: BLOB handle to reposition.
+            iRow: Row ID of the new row.
+
+        Returns:
+            SQLITE_OK on success, or an error code on failure.
+        """
         return self.lib.get_function[fn (type_of(pBlob), type_of(iRow)) -> c_int]("sqlite3_blob_reopen")(pBlob, iRow)
 
-    fn sqlite3_blob_close(self, pBlob: UnsafeMutPointer[sqlite3_blob]) -> c_int:
+    fn sqlite3_blob_close(self, pBlob: ExternalMutPointer[sqlite3_blob]) -> c_int:
+        """Close A BLOB Handle.
+
+        This routine closes a BLOB handle that was previously opened by
+        sqlite3_blob_open(). Closing a BLOB handle commits any changes that
+        were made to the BLOB using sqlite3_blob_write().
+
+        Args:
+            pBlob: BLOB handle to close.
+
+        Returns:
+            SQLITE_OK on success, or an error code on failure.
+        """
         return self.lib.get_function[fn (type_of(pBlob)) -> c_int]("sqlite3_blob_close")(pBlob)
 
-    fn sqlite3_blob_bytes(self, pBlob: UnsafeMutPointer[sqlite3_blob]) -> c_int:
+    fn sqlite3_blob_bytes(self, pBlob: ExternalMutPointer[sqlite3_blob]) -> c_int:
+        """Return The Size Of An Open BLOB.
+
+        This routine returns the size in bytes of the BLOB accessible via
+        the successfully opened BLOB handle. The size of the BLOB cannot
+        change as long as the BLOB handle remains open.
+
+        Args:
+            pBlob: BLOB handle.
+
+        Returns:
+            Size of the BLOB in bytes.
+        """
         return self.lib.get_function[fn (type_of(pBlob)) -> c_int]("sqlite3_blob_bytes")(pBlob)
 
-    fn sqlite3_blob_read(
-        self, pBlob: UnsafeMutPointer[sqlite3_blob], Z: OpaqueMutPointer, N: c_int, iOffset: c_int
+    fn sqlite3_blob_read[origin: MutOrigin](
+        self, pBlob: ExternalMutPointer[sqlite3_blob], Z: OpaqueMutPointer[origin], N: c_int, iOffset: c_int
     ) -> c_int:
+        """Read Data From A BLOB Incrementally.
+
+        This routine reads N bytes of data from the BLOB into buffer Z,
+        starting at offset iOffset within the BLOB. This is useful for
+        reading large BLOBs in chunks rather than loading the entire BLOB
+        into memory.
+
+        Args:
+            pBlob: BLOB handle.
+            Z: Buffer to read data into.
+            N: Number of bytes to read.
+            iOffset: Offset within the BLOB to start reading.
+
+        Returns:
+            SQLITE_OK on success, or an error code on failure.
+        """
         return self.lib.get_function[fn (type_of(pBlob), type_of(Z), type_of(N), type_of(iOffset)) -> c_int](
             "sqlite3_blob_read"
         )(pBlob, Z, N, iOffset)
 
-    fn sqlite3_blob_write(
-        self, pBlob: UnsafeMutPointer[sqlite3_blob], z: OpaqueMutPointer, n: c_int, iOffset: c_int
+    fn sqlite3_blob_write[origin: MutOrigin](
+        self, pBlob: ExternalMutPointer[sqlite3_blob], z: OpaqueMutPointer[origin], n: c_int, iOffset: c_int
     ) -> c_int:
+        """Write Data Into A BLOB Incrementally.
+
+        This routine writes n bytes of data from buffer z into the BLOB,
+        starting at offset iOffset within the BLOB. This is useful for
+        writing large BLOBs in chunks. The BLOB handle must have been opened
+        with the SQLITE_OPEN_READWRITE flag.
+
+        Args:
+            pBlob: BLOB handle.
+            z: Buffer containing data to write.
+            n: Number of bytes to write.
+            iOffset: Offset within the BLOB to start writing.
+
+        Returns:
+            SQLITE_OK on success, or an error code on failure.
+        """
         return self.lib.get_function[fn (type_of(pBlob), type_of(z), type_of(n), type_of(iOffset)) -> c_int](
             "sqlite3_blob_write"
         )(pBlob, z, n, iOffset)
 
-    fn sqlite3_file_control(
+    fn sqlite3_file_control[
+        db_name_origin: ImmutOrigin,
+        arg_origin: MutOrigin,
+    ](
         self,
         db: ExternalMutPointer[sqlite3_connection],
-        zDbName: UnsafeImmutPointer[c_char],
+        zDbName: UnsafeImmutPointer[c_char, db_name_origin],
         op: c_int,
-        pArg: OpaqueMutPointer,
+        pArg: OpaqueMutPointer[arg_origin],
     ) -> c_int:
+        """Low-Level Control Of Database Files.
+
+        This routine provides a low-level interface to the VFS layer for
+        performing file control operations. The op parameter specifies which
+        operation to perform, and pArg is a pointer to operation-specific data.
+        Common operations include SQLITE_FCNTL_LOCKSTATE, SQLITE_FCNTL_PERSIST_WAL,
+        and SQLITE_FCNTL_CHUNK_SIZE.
+
+        Args:
+            db: Database connection handle.
+            zDbName: Name of the database schema.
+            op: Operation code.
+            pArg: Operation-specific data pointer.
+
+        Returns:
+            SQLITE_OK on success, SQLITE_NOTFOUND if unknown op, or error code.
+        """
         return self.lib.get_function[fn (type_of(db), type_of(zDbName), type_of(op), type_of(pArg)) -> c_int](
             "sqlite3_file_control"
         )(db, zDbName, op, pArg)
 
-    fn sqlite3_backup_init(
+    fn sqlite3_backup_init[
+        dest_name_origin: ImmutOrigin,
+        source_name_origin: ImmutOrigin,
+    ](
         self,
         pDest: ExternalMutPointer[sqlite3_connection],
-        zDestName: UnsafeImmutPointer[c_char],
+        zDestName: UnsafeImmutPointer[c_char, dest_name_origin],
         pSource: ExternalMutPointer[sqlite3_connection],
-        zSourceName: UnsafeImmutPointer[c_char],
+        zSourceName: UnsafeImmutPointer[c_char, source_name_origin],
     ) -> ExternalMutPointer[sqlite3_backup]:
+        """Initialize A Backup Operation.
+
+        This routine initializes a backup operation to copy the contents of
+        one database into another. The backup can proceed incrementally using
+        sqlite3_backup_step(). This is useful for creating backups without
+        blocking the database for extended periods.
+
+        Args:
+            pDest: Destination database connection.
+            zDestName: Name of destination database schema (e.g., "main").
+            pSource: Source database connection.
+            zSourceName: Name of source database schema.
+
+        Returns:
+            Backup handle, or NULL on error.
+        """
         return self.lib.get_function[
             fn (
                 type_of(pDest), type_of(zDestName), type_of(pSource), type_of(zSourceName)
             ) -> ExternalMutPointer[sqlite3_backup]
         ]("sqlite3_backup_init")(pDest, zDestName, pSource, zSourceName)
 
-    fn sqlite3_backup_step(self, p: UnsafeMutPointer[sqlite3_backup], nPage: c_int) -> c_int:
+    fn sqlite3_backup_step(self, p: ExternalMutPointer[sqlite3_backup], nPage: c_int) -> c_int:
+        """Copy Up To nPage Pages.
+
+        This routine copies up to nPage pages from the source database to the
+        destination database. If nPage is negative, all remaining pages are
+        copied. This routine can be called repeatedly to perform the backup
+        incrementally.
+
+        Args:
+            p: Backup handle.
+            nPage: Number of pages to copy (negative for all remaining).
+
+        Returns:
+            SQLITE_OK if complete, SQLITE_DONE if more to do, or error code.
+        """
         return self.lib.get_function[fn (type_of(p), type_of(nPage)) -> c_int]("sqlite3_backup_step")(p, nPage)
 
-    fn sqlite3_backup_finish(self, p: UnsafeMutPointer[sqlite3_backup]) -> c_int:
+    fn sqlite3_backup_finish(self, p: ExternalMutPointer[sqlite3_backup]) -> c_int:
+        """Finish A Backup Operation.
+
+        This routine finishes a backup operation and releases all resources
+        associated with the backup handle. This routine should be called even
+        if the backup fails.
+
+        Args:
+            p: Backup handle.
+
+        Returns:
+            SQLITE_OK on success, or an error code on failure.
+        """
         return self.lib.get_function[fn (type_of(p)) -> c_int]("sqlite3_backup_finish")(p)
 
-    fn sqlite3_backup_remaining(self, p: UnsafeMutPointer[sqlite3_backup]) -> c_int:
+    fn sqlite3_backup_remaining(self, p: ExternalMutPointer[sqlite3_backup]) -> c_int:
+        """Get Number Of Remaining Pages.
+
+        This routine returns the number of pages still to be backed up at the
+        conclusion of the most recent sqlite3_backup_step(). This can be used
+        to track backup progress.
+
+        Args:
+            p: Backup handle.
+
+        Returns:
+            Number of pages remaining to backup.
+        """
         return self.lib.get_function[fn (type_of(p)) -> c_int]("sqlite3_backup_remaining")(p)
 
-    fn sqlite3_backup_pagecount(self, p: UnsafeMutPointer[sqlite3_backup]) -> c_int:
+    fn sqlite3_backup_pagecount(self, p: ExternalMutPointer[sqlite3_backup]) -> c_int:
+        """Get Total Number Of Pages.
+
+        This routine returns the total number of pages in the source database
+        at the conclusion of the most recent sqlite3_backup_step(). This can
+        be used together with sqlite3_backup_remaining() to calculate backup
+        progress.
+
+        Args:
+            p: Backup handle.
+
+        Returns:
+            Total number of pages in source database.
+        """
         return self.lib.get_function[fn (type_of(p)) -> c_int]("sqlite3_backup_pagecount")(p)
 
     fn sqlite3_unlock_notify[
-        origin: MutOrigin, origin2: MutOrigin
+        notify_origin: MutOrigin, notify_origin2: MutOrigin, arg_origin: MutOrigin,
     ](
         self,
         pBlocked: ExternalMutPointer[sqlite3_connection],
-        xNotify: fn (UnsafeMutPointer[OpaqueMutPointer[origin], origin2], c_int) -> NoneType,
-        pNotifyArg: OpaqueMutPointer,
+        xNotify: fn (UnsafeMutPointer[OpaqueMutPointer[notify_origin], notify_origin2], c_int) -> NoneType,
+        pNotifyArg: OpaqueMutPointer[arg_origin],
     ) -> c_int:
+        """Unlock Notification.
+
+        This routine registers a callback function that is invoked when a
+        database connection that is currently blocked waiting for a lock
+        becomes unblocked. This is useful for implementing custom deadlock
+        detection and resolution strategies in multi-threaded applications.
+
+        This interface is only available if SQLite is compiled with the
+        SQLITE_ENABLE_UNLOCK_NOTIFY preprocessor symbol defined.
+
+        Args:
+            pBlocked: Database connection that may be blocked.
+            xNotify: Callback function to invoke when unblocked.
+            pNotifyArg: User data pointer passed to callback.
+
+        Returns:
+            SQLITE_OK on success, or an error code on failure.
+        """
         return self.lib.get_function[fn (type_of(pBlocked), type_of(xNotify), type_of(pNotifyArg)) -> c_int](
             "sqlite3_unlock_notify"
         )(pBlocked, xNotify, pNotifyArg)
 
-    fn sqlite3_log(self, iErrCode: c_int, zFormat: UnsafeImmutPointer[c_char]) -> NoneType:
+    fn sqlite3_log[origin: ImmutOrigin](self, iErrCode: c_int, zFormat: UnsafeImmutPointer[c_char, origin]) -> NoneType:
+        """Error Logging Interface.
+
+        This routine is used by SQLite internally to log error and warning
+        messages. Applications can also use this interface to write messages
+        to the SQLite error log. The format string and arguments follow
+        printf conventions.
+
+        Args:
+            iErrCode: Error code associated with the message.
+            zFormat: Printf-style format string.
+        """
         return self.lib.get_function[fn (type_of(iErrCode), type_of(zFormat)) -> NoneType]("sqlite3_log")(
             iErrCode, zFormat
         )
 
     fn sqlite3_wal_hook[
-        origin: MutOrigin, origin2: MutOrigin, origin3: MutOrigin
+        cb_origin: MutOrigin, cb_origin2: MutOrigin, arg_origin: MutOrigin
     ](
         self,
         db: ExternalMutPointer[sqlite3_connection],
         xCallback: fn (
-            OpaqueMutPointer[origin],
-            UnsafeMutPointer[sqlite3_connection, origin2],
-            UnsafeMutPointer[c_char, origin3],
+            OpaqueMutPointer[cb_origin],
+            ExternalMutPointer[sqlite3_connection],
+            UnsafeMutPointer[c_char, cb_origin2],
             c_int,
         ) -> c_int,
-        pArg: OpaqueMutPointer,
-    ) -> OpaqueMutPointer:
-        return self.lib.get_function[fn (type_of(db), type_of(xCallback), type_of(pArg)) -> OpaqueMutPointer](
+        pArg: OpaqueMutPointer[arg_origin],
+    ) -> ExternalMutPointer[NoneType]:
+        """Write-Ahead Log Commit Hook.
+
+        This routine registers a callback function that is invoked each time
+        data is committed to a write-ahead log (WAL). The callback can be
+        used to trigger checkpoints or other actions when the WAL reaches
+        a certain size.
+
+        Args:
+            db: Database connection handle.
+            xCallback: Callback function invoked on WAL commits.
+            pArg: User data pointer passed to callback.
+
+        Returns:
+            Previously registered user data pointer.
+        """
+        return self.lib.get_function[fn (type_of(db), type_of(xCallback), type_of(pArg)) -> ExternalMutPointer[NoneType]](
             "sqlite3_wal_hook"
         )(db, xCallback, pArg)
 
     fn sqlite3_wal_autocheckpoint(self, db: ExternalMutPointer[sqlite3_connection], N: c_int) -> c_int:
+        """Configure Automatic Checkpointing.
+
+        This routine configures automatic checkpointing of the write-ahead log.
+        A checkpoint is automatically invoked after N frames have been written
+        to the WAL. Setting N to 0 or a negative value disables automatic
+        checkpointing.
+
+        Args:
+            db: Database connection handle.
+            N: Number of WAL frames before automatic checkpoint (0 to disable).
+
+        Returns:
+            SQLITE_OK on success, or an error code on failure.
+        """
         return self.lib.get_function[fn (type_of(db), type_of(N)) -> c_int]("sqlite3_wal_autocheckpoint")(db, N)
 
-    fn sqlite3_wal_checkpoint(
-        self, db: ExternalMutPointer[sqlite3_connection], zDb: UnsafeImmutPointer[c_char]
+    fn sqlite3_wal_checkpoint[origin: ImmutOrigin](
+        self, db: ExternalMutPointer[sqlite3_connection], zDb: UnsafeImmutPointer[c_char, origin]
     ) -> c_int:
+        """Checkpoint A Database.
+
+        This routine runs a checkpoint operation on database zDb. A checkpoint
+        transfers data from the write-ahead log back into the main database
+        file. This is equivalent to calling sqlite3_wal_checkpoint_v2() with
+        SQLITE_CHECKPOINT_PASSIVE mode.
+
+        Args:
+            db: Database connection handle.
+            zDb: Name of the database schema to checkpoint (NULL for all).
+
+        Returns:
+            SQLITE_OK on success, or an error code on failure.
+        """
         return self.lib.get_function[fn (type_of(db), type_of(zDb)) -> c_int]("sqlite3_wal_checkpoint")(db, zDb)
 
     fn sqlite3_wal_checkpoint_v2(
@@ -1740,6 +3118,29 @@ struct _sqlite3(Movable):
         pnLog: UnsafeMutPointer[c_int],
         pnCkpt: UnsafeMutPointer[c_int],
     ) -> c_int:
+        """Checkpoint A Database (Version 2).
+
+        This routine runs a checkpoint operation on database zDb with more
+        control over the checkpoint behavior. The eMode parameter specifies
+        the checkpoint mode:
+        - SQLITE_CHECKPOINT_PASSIVE: Do as much as possible without blocking
+        - SQLITE_CHECKPOINT_FULL: Block until checkpoint is complete
+        - SQLITE_CHECKPOINT_RESTART: Like FULL, also reset the WAL
+        - SQLITE_CHECKPOINT_TRUNCATE: Like RESTART, also truncate the WAL
+
+        The pnLog and pnCkpt parameters receive the total number of frames
+        in the WAL and the number of frames checkpointed, respectively.
+
+        Args:
+            db: Database connection handle.
+            zDb: Name of the database schema to checkpoint (NULL for all).
+            eMode: Checkpoint mode (PASSIVE, FULL, RESTART, or TRUNCATE).
+            pnLog: OUT: Total frames in WAL after checkpoint (or NULL).
+            pnCkpt: OUT: Frames checkpointed (or NULL).
+
+        Returns:
+            SQLITE_OK on success, or an error code on failure.
+        """
         return self.lib.get_function[
             fn (
                 type_of(db),
@@ -1751,47 +3152,177 @@ struct _sqlite3(Movable):
         ]("sqlite3_wal_checkpoint_v2")(db, zDb, eMode, pnLog, pnCkpt)
 
     fn sqlite3_vtab_config(self, db: ExternalMutPointer[sqlite3_connection], op: c_int) -> c_int:
-        return self.lib.get_function[fn (type_of(db), /, op: c_int) -> c_int]("sqlite3_vtab_config")(db, op)
+        """Configure Virtual Table Behavior.
+
+        This interface is used to configure virtual table implementations.
+        The first argument is the database connection the virtual table is
+        being created within. The second argument is a configuration option.
+        Valid values for op include SQLITE_VTAB_CONSTRAINT_SUPPORT and
+        SQLITE_VTAB_INNOCUOUS.
+
+        Args:
+            db: Database connection handle.
+            op: Configuration option identifier.
+
+        Returns:
+            SQLITE_OK on success, or an error code on failure.
+        """
+        return self.lib.get_function[fn (type_of(db), type_of(op)) -> c_int]("sqlite3_vtab_config")(db, op)
 
     fn sqlite3_vtab_on_conflict(self, db: ExternalMutPointer[sqlite3_connection]) -> c_int:
+        """Determine The Virtual Table Conflict Policy.
+
+        This function may only be called from within a call to the xUpdate
+        method of a virtual table implementation for an INSERT or UPDATE
+        operation. The value returned is one of SQLITE_ROLLBACK, SQLITE_IGNORE,
+        SQLITE_FAIL, SQLITE_ABORT, or SQLITE_REPLACE, according to the ON
+        CONFLICT mode of the SQL statement that triggered the call to xUpdate.
+
+        Args:
+            db: Database connection handle.
+
+        Returns:
+            The ON CONFLICT mode (ROLLBACK, IGNORE, FAIL, ABORT, or REPLACE).
+        """
         return self.lib.get_function[fn (type_of(db)) -> c_int]("sqlite3_vtab_on_conflict")(db)
 
-    fn sqlite3_vtab_nochange(self, ctx: UnsafeMutPointer[sqlite3_context]) -> c_int:
+    fn sqlite3_vtab_nochange(self, ctx: ExternalMutPointer[sqlite3_context]) -> c_int:
+        """Detect No-Op Column Updates.
+
+        This function is used within virtual table UPDATE methods to determine
+        if a column value is actually being changed. It returns non-zero if
+        the column is not being changed, which can allow virtual table
+        implementations to optimize UPDATE operations.
+
+        Args:
+            ctx: SQL function context.
+
+        Returns:
+            Non-zero if the column is unchanged, zero if it is being updated.
+        """
         return self.lib.get_function[fn (type_of(ctx)) -> c_int]("sqlite3_vtab_nochange")(ctx)
 
     fn sqlite3_vtab_collation(
-        self, pIdxInfo: UnsafeMutPointer[sqlite3_index_info], iCons: c_int
+        self, pIdxInfo: ExternalMutPointer[sqlite3_index_info], iCons: c_int
     ) -> ExternalImmutPointer[c_char]:
+        """Get Collation For A Virtual Table Constraint.
+
+        This function is used within the xBestIndex method of a virtual table
+        implementation to determine the collation sequence for a constraint.
+        The function returns the name of the collation sequence or NULL if
+        the constraint has no explicit collation.
+
+        Args:
+            pIdxInfo: Virtual table index information structure.
+            iCons: Index of the constraint in the aConstraint array.
+
+        Returns:
+            Name of the collation sequence, or NULL.
+        """
         return self.lib.get_function[fn (type_of(pIdxInfo), type_of(iCons)) -> ExternalImmutPointer[c_char]](
             "sqlite3_vtab_collation"
         )(pIdxInfo, iCons)
 
-    fn sqlite3_vtab_distinct(self, pIdxInfo: UnsafeMutPointer[sqlite3_index_info]) -> c_int:
+    fn sqlite3_vtab_distinct(self, pIdxInfo: ExternalMutPointer[sqlite3_index_info]) -> c_int:
+        """Determine If A Virtual Table Query Is DISTINCT.
+
+        This function is used within the xBestIndex method of a virtual table
+        implementation to determine if the query will apply a DISTINCT operator.
+        Returns 1 if DISTINCT, 2 if UNIQUE, or 0 otherwise. This information
+        can help virtual tables optimize query execution.
+
+        Args:
+            pIdxInfo: Virtual table index information structure.
+
+        Returns:
+            1 for DISTINCT, 2 for UNIQUE, 0 for neither.
+        """
         return self.lib.get_function[fn (type_of(pIdxInfo)) -> c_int]("sqlite3_vtab_distinct")(pIdxInfo)
 
     fn sqlite3_db_cacheflush(self, db: ExternalMutPointer[sqlite3_connection]) -> c_int:
+        """Flush Cached Database Pages.
+
+        This routine attempts to flush any dirty pages in the database cache
+        to disk. This is similar to what happens during a checkpoint, but
+        it does not truncate or reset the write-ahead log. This routine is
+        useful for ensuring data is written to disk before doing operations
+        that require a consistent on-disk state.
+
+        Args:
+            db: Database connection handle.
+
+        Returns:
+            SQLITE_OK on success, or an error code on failure.
+        """
         return self.lib.get_function[fn (type_of(db)) -> c_int]("sqlite3_db_cacheflush")(db)
 
-    fn sqlite3_serialize(
+    fn sqlite3_serialize[
+        schema_origin: ImmutOrigin,
+        size_origin: MutOrigin,
+    ](
         self,
         db: ExternalMutPointer[sqlite3_connection],
-        zSchema: UnsafeImmutPointer[c_char],
-        piSize: UnsafeMutPointer[Int64],
+        zSchema: UnsafeImmutPointer[c_char, schema_origin],
+        piSize: UnsafeMutPointer[Int64, size_origin],
         mFlags: c_uint,
     ) -> ExternalMutPointer[c_uchar]:
+        """Serialize A Database.
+
+        This routine returns a pointer to memory that is a serialization of
+        the database. The serialization is a copy of the database in the
+        standard SQLite file format. The size of the serialization is written
+        to *piSize. The caller is responsible for freeing the memory using
+        sqlite3_free().
+
+        This interface is only available if SQLite is compiled with the
+        SQLITE_ENABLE_DESERIALIZE preprocessor symbol defined.
+
+        Args:
+            db: Database connection handle.
+            zSchema: Name of database schema to serialize (e.g., "main").
+            piSize: OUT: Size of the serialization in bytes.
+            mFlags: Flags controlling serialization behavior.
+
+        Returns:
+            Pointer to serialized database, or NULL on error.
+        """
         return self.lib.get_function[
             fn (type_of(db), type_of(zSchema), type_of(piSize), type_of(mFlags)) -> ExternalMutPointer[c_uchar]
         ]("sqlite3_serialize")(db, zSchema, piSize, mFlags)
 
-    fn sqlite3_deserialize(
+    fn sqlite3_deserialize[
+        schema_origin: ImmutOrigin,
+        data_origin: MutOrigin,
+    ](
         self,
         db: ExternalMutPointer[sqlite3_connection],
-        zSchema: UnsafeImmutPointer[c_char],
-        pData: UnsafeMutPointer[c_uchar],
+        zSchema: UnsafeImmutPointer[c_char, schema_origin],
+        pData: UnsafeMutPointer[c_uchar, data_origin],
         szDb: Int64,
         szBuf: Int64,
         mFlags: c_uint,
     ) -> c_int:
+        """Deserialize A Database.
+
+        This routine causes a database connection to disconnect from database
+        zSchema and then reopen zSchema as an in-memory database based on the
+        serialization contained in pData. The serialization must be in the
+        standard SQLite database file format.
+
+        This interface is only available if SQLite is compiled with the
+        SQLITE_ENABLE_DESERIALIZE preprocessor symbol defined.
+
+        Args:
+            db: Database connection handle.
+            zSchema: Name of database schema to deserialize (e.g., "main").
+            pData: Pointer to serialized database data.
+            szDb: Size of the database in bytes.
+            szBuf: Size of the buffer in bytes (>= szDb).
+            mFlags: Flags controlling deserialization behavior.
+
+        Returns:
+            SQLITE_OK on success, or an error code on failure.
+        """
         return self.lib.get_function[
             fn (
                 type_of(db),

@@ -448,30 +448,29 @@ struct Connection(Movable):
         Raises:
             Error: If the underlying SQLite call fails.
         """
-        var data_type_ptr = ExternalImmutPointer[Int8]()
-        var coll_seq_ptr = ExternalImmutPointer[Int8]()
-        var db_ptr = db_name.value().unsafe_cstr_ptr() if db_name else ExternalImmutPointer[Int8]()
         var not_null: Int32 = 0
         var primary_key: Int32 = 0
         var auto_inc: Int32 = 0
+        var data_type: Optional[String] = None
+        var coll_seq: Optional[String] = None
 
         self.raise_if_error(
             get_sqlite3_handle()[].table_column_metadata(
                 self.db.db,
-                db_ptr,
-                table_name.unsafe_cstr_ptr(),
-                column_name.unsafe_cstr_ptr(),
-                data_type_ptr,
-                coll_seq_ptr,
-                UnsafePointerV2(to=not_null),
-                UnsafePointerV2(to=primary_key),
-                UnsafePointerV2(to=auto_inc),
+                db_name,
+                table_name,
+                column_name,
+                data_type,
+                coll_seq,
+                not_null,
+                primary_key,
+                auto_inc,
             )
         )
 
         return ColumnMetadata(
-            data_type=String(unsafe_from_utf8_ptr=data_type_ptr) if data_type_ptr else Optional[String](None),
-            collation_sequence=String(unsafe_from_utf8_ptr=coll_seq_ptr) if coll_seq_ptr else Optional[String](None),
+            data_type=data_type.value() if data_type else Optional[String](None),
+            collation_sequence=coll_seq.value() if coll_seq else Optional[String](None),
             not_null=not_null != 0,
             primary_key=primary_key != 0,
             auto_increment=auto_inc != 0,
@@ -496,18 +495,16 @@ struct Connection(Movable):
         Raises:
             Error: If the underlying SQLite call fails with an unexpected error.
         """
-        var db_ptr = db_name.value().unsafe_cstr_ptr() if db_name else ExternalImmutPointer[Int8]()
-        var column_ptr = column_name.value().unsafe_cstr_ptr() if column_name else ExternalImmutPointer[Int8]()
         var r = get_sqlite3_handle()[].table_column_metadata(
             self.db.db,
-            db_ptr,
-            table_name.unsafe_cstr_ptr(),
-            column_ptr,
-            UnsafePointerV2[Int8, ImmutableAnyOrigin](),
-            UnsafePointerV2[Int8, ImmutableAnyOrigin](),
-            ExternalMutPointer[Int32](),
-            ExternalMutPointer[Int32](),
-            ExternalMutPointer[Int32](),
+            db_name,
+            table_name,
+            column_name,
+            None,
+            None,
+            None,
+            None,
+            None,
         )
 
         if r == SQLite3Result.SQLITE_OK:
