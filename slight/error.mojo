@@ -4,7 +4,9 @@ from slight.bindings import sqlite3_connection
 from slight.result import SQLite3Result
 
 
-fn error_msg(db: ExternalMutPointer[sqlite3_connection], code: SQLite3Result) -> Optional[StringSlice[ImmutableAnyOrigin]]:
+fn error_msg(
+    db: ExternalMutPointer[sqlite3_connection], code: SQLite3Result
+) -> Optional[StringSlice[ImmutableAnyOrigin]]:
     """Checks for the error message set in sqlite3, or what the description of the provided code is.
 
     Args:

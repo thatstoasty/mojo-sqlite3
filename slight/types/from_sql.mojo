@@ -1,5 +1,6 @@
 from slight.types.value_ref import ValueRef
 
+
 trait FromSQL(Copyable, Movable):
     """A trait for types that can be constructed from a SQL value."""
 
@@ -8,37 +9,32 @@ trait FromSQL(Copyable, Movable):
 
 
 __extension Int(FromSQL):
-    
     fn __init__(out self, value: ValueRef) raises:
         self = Self(value.as_int64())
 
 
 # __extension Optional(FromSQL) where T: FromSQL:
-    
+
 #     fn __init__(out self: Self, value: ValueRef) raises:
 #         self = Self(T(value.as_int64()))
 
 
 __extension String(FromSQL):
-
     fn __init__(out self, value: ValueRef) raises:
         self = Self(value.as_string_slice())
 
 
 __extension Bool(FromSQL):
-
     fn __init__(out self, value: ValueRef) raises:
         self = value.as_int64() == 1
 
 
 __extension NoneType(FromSQL):
-
     fn __init__(out self, value: ValueRef) raises:
         self = None
 
 
 __extension SIMD(FromSQL):
-    
     fn __init__(out self, value: ValueRef) raises:
         @parameter
         if dtype == DType.int8:

@@ -1,7 +1,9 @@
 from utils.variant import Variant
 
+
 trait SQLType:
     """A marker trait for types that represent SQL values."""
+
     pass
 
 
@@ -43,7 +45,7 @@ struct SQLite3Real(Copyable, Movable, SQLType):
 
 
 @fieldwise_init
-struct SQLite3Text[stmt: Origin](Copyable, Movable, SQLType):
+struct SQLite3Text[stmt: ImmutOrigin](Copyable, Movable, SQLType):
     """Represents a SQL TEXT value.
 
     This struct wraps a text string value from SQLite. The text is stored
@@ -58,7 +60,7 @@ struct SQLite3Text[stmt: Origin](Copyable, Movable, SQLType):
 
 
 @fieldwise_init
-struct SQLite3Blob[stmt: Origin](Copyable, Movable, SQLType):
+struct SQLite3Blob[stmt: ImmutOrigin](Copyable, Movable, SQLType):
     """Represents a SQL BLOB (binary large object) value.
 
     This struct wraps binary data from SQLite. The data is stored as a Span
@@ -72,7 +74,7 @@ struct SQLite3Blob[stmt: Origin](Copyable, Movable, SQLType):
     var value: Span[Byte, stmt]
 
 
-struct ValueRef[stmt: Origin]:
+struct ValueRef[stmt: ImmutOrigin]:
     """A non-owning dynamic type value. Typically, the memory backing this value is var by SQLite.
 
     See [`Value`](Value) for an owning dynamic type value.
@@ -149,7 +151,7 @@ struct ValueRef[stmt: Origin]:
             A reference to the value cast to type T.
         """
         return self.value[T]
-    
+
     fn as_string_slice(self) raises -> StringSlice[stmt]:
         """Convert the SQL value to its string representation.
 
@@ -163,7 +165,7 @@ struct ValueRef[stmt: Origin]:
             return self[SQLite3Text[stmt]].value
 
         raise InvalidColumnTypeError
-    
+
     fn as_string_slice_or_null(self) raises -> Optional[StringSlice[stmt]]:
         """Convert the SQL value to its string representation.
 
@@ -193,7 +195,7 @@ struct ValueRef[stmt: Origin]:
             return self[SQLite3Integer].value
 
         raise InvalidColumnTypeError
-    
+
     fn as_int64_or_null(self) raises -> Optional[Int64]:
         """Convert the SQL value to its Int64 representation.
 
@@ -209,7 +211,7 @@ struct ValueRef[stmt: Origin]:
             return None
 
         raise InvalidColumnTypeError
-    
+
     fn as_float64(self) raises -> Float64:
         """Convert the SQL value to its Float64 representation.
 
@@ -223,7 +225,7 @@ struct ValueRef[stmt: Origin]:
             return self[SQLite3Real].value
 
         raise InvalidColumnTypeError
-    
+
     fn as_float64_or_null(self) raises -> Optional[Float64]:
         """Convert the SQL value to its Float64 representation.
 
@@ -239,7 +241,7 @@ struct ValueRef[stmt: Origin]:
             return None
 
         raise InvalidColumnTypeError
-    
+
     fn as_blob(self) raises -> Span[Byte, stmt]:
         """Convert the SQL value to its BLOB representation.
 
@@ -251,9 +253,9 @@ struct ValueRef[stmt: Origin]:
         """
         if self.isa[SQLite3Blob[stmt]]():
             return self[SQLite3Blob[stmt]].value
-        
+
         raise InvalidColumnTypeError
-    
+
     fn as_blob_or_null(self) raises -> Optional[Span[Byte, stmt]]:
         """Convert the SQL value to its BLOB representation.
 
@@ -269,7 +271,7 @@ struct ValueRef[stmt: Origin]:
             return None
 
         raise InvalidColumnTypeError
-    
+
     fn as_bytes(self) raises -> Span[Byte, stmt]:
         """Convert the SQL value to a byte representation.
 
@@ -282,7 +284,7 @@ struct ValueRef[stmt: Origin]:
             return self[SQLite3Blob[stmt]].value
         if self.isa[SQLite3Text[stmt]]():
             return self[SQLite3Text[stmt]].value.as_bytes()
-        
+
         raise InvalidColumnTypeError
 
     fn as_bytes_or_null(self) raises -> Optional[Span[Byte, stmt]]:

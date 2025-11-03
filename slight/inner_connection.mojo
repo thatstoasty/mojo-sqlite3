@@ -96,7 +96,7 @@ struct InnerConnection(Movable):
             True if the connection is in auto-commit mode, False otherwise.
         """
         return get_sqlite3_handle()[].get_autocommit(self.db)
-    
+
     fn is_busy(self) -> Bool:
         """Returns whether the connection is currently busy.
 
@@ -112,7 +112,7 @@ struct InnerConnection(Movable):
 
     fn close(deinit self) -> SQLite3Result:
         """Closes the underlying sqlite3 connection.
-        
+
         Returns:
             The SQLite3Result code from the close operation.
         """
@@ -161,14 +161,12 @@ struct InnerConnection(Movable):
             Will return an `Error` if the underlying SQLite prepare call fails.
         """
         var stmt = ExternalMutPointer[sqlite3_stmt]()
-        var str = sql.unsafe_cstr_ptr().mut_cast[False]()
+        var str = sql.unsafe_cstr_ptr()
         var c_tail = UnsafePointerV2(to=str)
 
         try:
             self.raise_if_error(
-                get_sqlite3_handle()[].prepare_v3(
-                    self.db, str, Int32(len(sql)), flags.value, stmt, c_tail
-                ),
+                get_sqlite3_handle()[].prepare_v3(self.db, str, Int32(len(sql)), flags.value, stmt, c_tail),
             )
         except e:
             if stmt:
@@ -176,8 +174,9 @@ struct InnerConnection(Movable):
             raise e
 
         var tail: UInt = 0
-        if len(StringSlice(unsafe_from_utf8_ptr=c_tail[])) > 0:
-            var n = len(sql) - len(StringSlice(unsafe_from_utf8_ptr=c_tail[]))
+        var tail_len = len(StringSlice(unsafe_from_utf8_ptr=c_tail[]))
+        if tail_len > 0:
+            var n = len(sql) - tail_len
 
             # Somehow the remaining tail is negative, or is longer than the original sql. Set to 0.
             if n <= 0 or n >= len(sql):
@@ -185,7 +184,7 @@ struct InnerConnection(Movable):
             else:
                 tail = UInt(n)
         return stmt, tail
-    
+
     fn path(self) -> Optional[Path]:
         """Returns the file path of the database.
 
@@ -193,11 +192,11 @@ struct InnerConnection(Movable):
             The file path of the database, or None if the database is in-memory.
         """
         var db_name = String("main")
-        var path_ptr = get_sqlite3_handle()[].db_filename(self.db, db_name.unsafe_cstr_ptr())
-        if not path_ptr:
+        var path = get_sqlite3_handle()[].db_filename(self.db, db_name)
+        if not path:
             return None
-        
-        return Path(StringSlice(unsafe_from_utf8_ptr=path_ptr))
+
+        return Path(path.value())
 
     fn is_database_read_only(self, var database: String) raises -> Bool:
         """Checks if the specified database is opened in read-only mode.
@@ -208,7 +207,7 @@ struct InnerConnection(Movable):
         Returns:
             True if the database is read-only, False otherwise.
         """
-        var result = get_sqlite3_handle()[].db_readonly(self.db, database.unsafe_cstr_ptr())
+        var result = get_sqlite3_handle()[].db_readonly(self.db, database)
         if result == SQLite3Result.SQLITE_OK:
             return True
         elif result == SQLite3Result.SQLITE_ERROR:
@@ -228,7 +227,7 @@ struct InnerConnection(Movable):
             Error: If the SQLite error code is not `SQLITE_OK`.
         """
         raise_if_error(self.db, code)
-    
+
     fn error_msg(self, code: SQLite3Result) -> Optional[StringSlice[ImmutableAnyOrigin]]:
         """Checks for the error message set in sqlite3, or what the description of the provided code is.
 

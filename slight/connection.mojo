@@ -7,7 +7,7 @@ from slight.inner_connection import InnerConnection
 from slight.flags import PrepFlag, OpenFlag
 from slight.params import Parameter
 from slight.statement import Statement
-from slight.row import Row, Int # RowIndex extension for Int
+from slight.row import Row, Int  # RowIndex extension for Int
 from slight.types.from_sql import FromSQL
 from slight.column import ColumnMetadata
 
@@ -21,7 +21,9 @@ struct Connection(Movable):
 
     @staticmethod
     fn open(
-        out connection: Self, path: Path, flags: OpenFlag = OpenFlag(),
+        out connection: Self,
+        path: Path,
+        flags: OpenFlag = OpenFlag(),
     ) raises:
         """Open a new connection to a SQLite database. If a database does not exist
         at the path, one is created.
@@ -61,7 +63,8 @@ struct Connection(Movable):
 
     @staticmethod
     fn open_in_memory(
-        out connection: Self, flags: OpenFlag = OpenFlag(),
+        out connection: Self,
+        flags: OpenFlag = OpenFlag(),
     ) raises:
         """Open a new connection to an in-memory SQLite database.
 
@@ -130,7 +133,7 @@ struct Connection(Movable):
             Error: If the SQLite error code is not `SQLITE_OK`.
         """
         self.db.raise_if_error(code)
-    
+
     fn error_msg(self, code: SQLite3Result) -> Optional[StringSlice[ImmutableAnyOrigin]]:
         """Checks for the error message set in sqlite3, or what the description of the provided code is.
 
@@ -141,7 +144,7 @@ struct Connection(Movable):
             An optional string slice containing the error message, or None if not found.
         """
         return self.db.error_msg(code)
-    
+
     fn decode_error(self, code: SQLite3Result) -> Error:
         """Return an error if the SQLite error code is not `SQLITE_OK`.
 
@@ -164,7 +167,7 @@ struct Connection(Movable):
             True if the connection is in auto-commit mode, False otherwise.
         """
         return self.db.is_autocommit()
-    
+
     fn is_busy(self) -> Bool:
         """Returns whether the connection is currently executing a statement.
 
@@ -172,7 +175,7 @@ struct Connection(Movable):
             True if the connection is busy, False otherwise.
         """
         return self.db.is_busy()
-    
+
     fn changes(self) -> Int64:
         """Returns the number of rows that were changed, inserted, or deleted
         by the most recent SQL statement.
@@ -181,7 +184,7 @@ struct Connection(Movable):
             The number of rows changed by the last operation.
         """
         return self.db.changes()
-    
+
     fn total_changes(self) -> Int64:
         """Returns the total number of rows that were changed, inserted, or deleted
         since the database connection was opened.
@@ -191,9 +194,7 @@ struct Connection(Movable):
         """
         return self.db.total_changes()
 
-    fn prepare(
-        self, sql: String, flags: PrepFlag = PrepFlag.PREPARE_PERSISTENT
-    ) raises -> Statement[origin_of(self)]:
+    fn prepare(self, sql: String, flags: PrepFlag = PrepFlag.PREPARE_PERSISTENT) raises -> Statement[origin_of(self)]:
         """Prepares a SQL statement for execution.
 
         Args:
@@ -207,9 +208,11 @@ struct Connection(Movable):
 
         # If there is trailing SQL after the first statement that contains a valid SQL statement, raise an error.
         if tail > 0:
-            var tail_stmt, _ = self.db.prepare(sql[Int(tail):])
+            var tail_stmt, _ = self.db.prepare(sql[Int(tail) :])
             if tail_stmt:
-                raise Error("MultipleStatementsError: Prepared statement contains multiple SQL statements. Should be one.")
+                raise Error(
+                    "MultipleStatementsError: Prepared statement contains multiple SQL statements. Should be one."
+                )
 
         return Statement(Pointer(to=self), stmt)
 
@@ -225,7 +228,7 @@ struct Connection(Movable):
         """
         var stmt = self.prepare(sql^)
         return stmt.execute(params)
-    
+
     fn execute(self, var sql: String, params: Dict[String, Parameter]) raises -> Int64:
         """Executes a SQL statement with the given parameters.
 
@@ -238,7 +241,7 @@ struct Connection(Movable):
         """
         var stmt = self.prepare(sql^)
         return stmt.execute(params)
-    
+
     fn execute(self, var sql: String, params: List[Tuple[String, Parameter]]) raises -> Int64:
         """Executes a SQL statement with the given parameters.
 
@@ -251,11 +254,9 @@ struct Connection(Movable):
         """
         var stmt = self.prepare(sql^)
         return stmt.execute(params)
-    
+
     fn query_row[
-        T: Copyable & Movable,
-        //,
-        transform: fn (Row) raises -> T
+        T: Copyable & Movable, //, transform: fn (Row) raises -> T
     ](mut self, var sql: String, params: List[Parameter] = []) raises -> T:
         """Executes the query and returns a single row.
 
@@ -278,11 +279,9 @@ struct Connection(Movable):
         """
         var stmt = self.prepare(sql^)
         return stmt.query_row[transform=transform](params)
-    
+
     fn query_row[
-        T: Copyable & Movable,
-        //,
-        transform: fn (Row) raises -> T
+        T: Copyable & Movable, //, transform: fn (Row) raises -> T
     ](mut self, var sql: String, params: Dict[String, Parameter]) raises -> T:
         """Executes the query and returns a single row.
 
@@ -305,11 +304,9 @@ struct Connection(Movable):
         """
         var stmt = self.prepare(sql^)
         return stmt.query_row[transform=transform](params)
-    
+
     fn query_row[
-        T: Copyable & Movable,
-        //,
-        transform: fn (Row) raises -> T
+        T: Copyable & Movable, //, transform: fn (Row) raises -> T
     ](mut self, var sql: String, params: List[Tuple[String, Parameter]]) raises -> T:
         """Executes the query and returns a single row.
 
@@ -332,8 +329,7 @@ struct Connection(Movable):
         """
         var stmt = self.prepare(sql^)
         return stmt.query_row[transform=transform](params)
-        
-    
+
     fn execute_batch(self, sql: String) raises:
         """Executes a batch of SQL statements.
 
@@ -346,11 +342,11 @@ struct Connection(Movable):
             var stmt, tail = self.db.prepare(current_sql.copy(), PrepFlag.PREPARE_PERSISTENT)
             if stmt and Statement(Pointer(to=self), stmt).step():
                 raise Error("ExecuteReturnedResults: The executed batch returned results, which is not supported.")
-                
+
             if tail == 0 or Int(tail) >= len(current_sql):
                 break
-            
-            current_sql = current_sql[Int(tail):]
+
+            current_sql = current_sql[Int(tail) :]
 
     fn path(self) -> Optional[Path]:
         """Returns the file path of the database.
@@ -371,7 +367,7 @@ struct Connection(Movable):
             return row.get[T](0)
 
         return self.query_row[get_item](sql, params)
-    
+
     fn one_column[
         T: FromSQL,
     ](mut self, var sql: String, params: Dict[String, Parameter]) raises -> T:
@@ -379,7 +375,7 @@ struct Connection(Movable):
             return row.get[T](0)
 
         return self.query_row[get_item](sql, params)
-    
+
     fn one_column[
         T: FromSQL,
     ](mut self, var sql: String, params: List[Tuple[String, Parameter]]) raises -> T:
@@ -395,7 +391,7 @@ struct Connection(Movable):
         column_name: String,
     ) raises -> Bool:
         """Check if `table_name`.`column_name` exists.
-        
+
         Args:
             db_name: The database name (main, temp, ATTACH name), or None to search all databases.
             table_name: The name of the table.
@@ -403,7 +399,7 @@ struct Connection(Movable):
 
         Returns:
             True if the column exists, False otherwise.
-            
+
         Raises:
             Error: If the underlying SQLite call fails.
         """
@@ -415,71 +411,71 @@ struct Connection(Movable):
         table_name: String,
     ) raises -> Bool:
         """Check if `table_name` exists.
-        
+
         Args:
             db_name: The database name (main, temp, ATTACH name), or None to search all databases.
             table_name: The name of the table.
 
         Returns:
             True if the table exists, False otherwise.
-            
+
         Raises:
             Error: If the underlying SQLite call fails.
         """
         return self.exists(db_name, table_name, None)
 
-    # fn column_metadata(
-    #     self,
-    #     var db_name: Optional[String],
-    #     var table_name: String,
-    #     var column_name: String,
-    # ) raises -> ColumnMetadata:
-    #     """Extract metadata of column at specified index.
-        
-    #     Args:
-    #         db_name: The database name (main, temp, ATTACH name), or None to search all databases.
-    #         table_name: The name of the table.
-    #         column_name: The name of the column.
+    fn column_metadata(
+        self,
+        var db_name: Optional[String],
+        var table_name: String,
+        var column_name: String,
+    ) raises -> ColumnMetadata:
+        """Extract metadata of column at specified index.
 
-    #     Returns:
-    #         `ColumnMetadata` containing:
-    #         - declared data type (Optional[String])
-    #         - name of default collation sequence (Optional[String])
-    #         - True if column has a NOT NULL constraint
-    #         - True if column is part of the PRIMARY KEY
-    #         - True if column is AUTOINCREMENT
-            
-    #     Raises:
-    #         Error: If the underlying SQLite call fails.
-    #     """
-    #     var data_type_ptr = ExternalImmutPointer[Int8]()
-    #     var coll_seq_ptr = ExternalImmutPointer[Int8]()
-    #     var db_ptr = db_name.value().unsafe_cstr_ptr() if db_name else ExternalImmutPointer[Int8]()
-    #     var not_null: Int32 = 0
-    #     var primary_key: Int32 = 0
-    #     var auto_inc: Int32 = 0
+        Args:
+            db_name: The database name (main, temp, ATTACH name), or None to search all databases.
+            table_name: The name of the table.
+            column_name: The name of the column.
 
-    #     self.raise_if_error(
-    #         get_sqlite3_handle()[].table_column_metadata(
-    #             self.db.db,
-    #             db_ptr,
-    #             table_name.unsafe_cstr_ptr(),
-    #             column_name.unsafe_cstr_ptr(),
-    #             UnsafePointerV2(to=data_type_ptr),
-    #             UnsafePointerV2(to=coll_seq_ptr),
-    #             UnsafePointerV2(to=not_null),
-    #             UnsafePointerV2(to=primary_key),
-    #             UnsafePointerV2(to=auto_inc),
-    #         )
-    #     )
+        Returns:
+            `ColumnMetadata` containing:
+            - declared data type (Optional[String])
+            - name of default collation sequence (Optional[String])
+            - True if column has a NOT NULL constraint
+            - True if column is part of the PRIMARY KEY
+            - True if column is AUTOINCREMENT
 
-    #     return ColumnMetadata(
-    #         data_type=String(unsafe_from_utf8_ptr=data_type_ptr) if data_type_ptr else Optional[String](None),
-    #         collation_sequence=String(unsafe_from_utf8_ptr=coll_seq_ptr) if coll_seq_ptr else Optional[String](None),
-    #         not_null=not_null != 0,
-    #         primary_key=primary_key != 0,
-    #         auto_increment=auto_inc != 0
-    #     )
+        Raises:
+            Error: If the underlying SQLite call fails.
+        """
+        var data_type_ptr = ExternalImmutPointer[Int8]()
+        var coll_seq_ptr = ExternalImmutPointer[Int8]()
+        var db_ptr = db_name.value().unsafe_cstr_ptr() if db_name else ExternalImmutPointer[Int8]()
+        var not_null: Int32 = 0
+        var primary_key: Int32 = 0
+        var auto_inc: Int32 = 0
+
+        self.raise_if_error(
+            get_sqlite3_handle()[].table_column_metadata(
+                self.db.db,
+                db_ptr,
+                table_name.unsafe_cstr_ptr(),
+                column_name.unsafe_cstr_ptr(),
+                data_type_ptr,
+                coll_seq_ptr,
+                UnsafePointerV2(to=not_null),
+                UnsafePointerV2(to=primary_key),
+                UnsafePointerV2(to=auto_inc),
+            )
+        )
+
+        return ColumnMetadata(
+            data_type=String(unsafe_from_utf8_ptr=data_type_ptr) if data_type_ptr else Optional[String](None),
+            collation_sequence=String(unsafe_from_utf8_ptr=coll_seq_ptr) if coll_seq_ptr else Optional[String](None),
+            not_null=not_null != 0,
+            primary_key=primary_key != 0,
+            auto_increment=auto_inc != 0,
+        )
 
     fn exists(
         self,
@@ -488,7 +484,7 @@ struct Connection(Movable):
         var column_name: Optional[String],
     ) raises -> Bool:
         """Check if a table or column exists.
-        
+
         Args:
             db_name: The database name or None.
             table_name: The name of the table.
@@ -496,28 +492,27 @@ struct Connection(Movable):
 
         Returns:
             True if the table/column exists, False otherwise.
-            
+
         Raises:
             Error: If the underlying SQLite call fails with an unexpected error.
         """
-        return True
-        # var db_ptr = db_name.value().unsafe_cstr_ptr() if db_name else ExternalImmutPointer[Int8]()
-        # var column_ptr = column_name.value().unsafe_cstr_ptr() if column_name else ExternalImmutPointer[Int8]()
-        # var r = get_sqlite3_handle()[].table_column_metadata(
-        #     self.db.db,
-        #     db_ptr,
-        #     table_name.unsafe_cstr_ptr(),
-        #     column_ptr,
-        #     UnsafePointerV2[Int8, ImmutableAnyOrigin](),
-        #     UnsafePointerV2[Int8, ImmutableAnyOrigin](),
-        #     ExternalMutPointer[Int32](),
-        #     ExternalMutPointer[Int32](),
-        #     ExternalMutPointer[Int32](),
-        # )
+        var db_ptr = db_name.value().unsafe_cstr_ptr() if db_name else ExternalImmutPointer[Int8]()
+        var column_ptr = column_name.value().unsafe_cstr_ptr() if column_name else ExternalImmutPointer[Int8]()
+        var r = get_sqlite3_handle()[].table_column_metadata(
+            self.db.db,
+            db_ptr,
+            table_name.unsafe_cstr_ptr(),
+            column_ptr,
+            UnsafePointerV2[Int8, ImmutableAnyOrigin](),
+            UnsafePointerV2[Int8, ImmutableAnyOrigin](),
+            ExternalMutPointer[Int32](),
+            ExternalMutPointer[Int32](),
+            ExternalMutPointer[Int32](),
+        )
 
-        # if r == SQLite3Result.SQLITE_OK:
-        #     return True
-        # elif r == SQLite3Result.SQLITE_ERROR:
-        #     return False
-        # else:
-        #     raise self.decode_error(r)
+        if r == SQLite3Result.SQLITE_OK:
+            return True
+        elif r == SQLite3Result.SQLITE_ERROR:
+            return False
+        else:
+            raise self.decode_error(r)

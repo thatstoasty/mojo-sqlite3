@@ -1,6 +1,13 @@
 from memory import Pointer
 from slight.statement import Statement, InvalidColumnIndexError
-from slight.types.value_ref import SQLite3Blob, SQLite3Integer, SQLite3Null, SQLite3Real, SQLite3Text, InvalidColumnTypeError
+from slight.types.value_ref import (
+    SQLite3Blob,
+    SQLite3Integer,
+    SQLite3Null,
+    SQLite3Real,
+    SQLite3Text,
+    InvalidColumnTypeError,
+)
 from slight.types.from_sql import FromSQL, String, Int, Bool, SIMD
 
 
@@ -13,7 +20,7 @@ __extension Int(RowIndex):
     fn idx(self, stmt: Statement) raises -> UInt:
         if self < 0 or UInt(self) >= stmt.column_count():
             raise InvalidColumnIndexError
-        
+
         return UInt(self)
 
 
@@ -21,7 +28,7 @@ __extension UInt(RowIndex):
     fn idx(self, stmt: Statement) raises -> UInt:
         if self >= stmt.column_count():
             raise InvalidColumnIndexError
-        
+
         return self
 
 
@@ -155,20 +162,20 @@ struct Row[statement: Origin, ptr: Origin](Copyable, Movable):
 
     fn get[S: FromSQL](self, idx: Some[RowIndex]) raises -> S:
         """Gets a value of type S from the specified column using generic type conversion.
-        
+
         This is a generic method that can retrieve values of any supported type,
         making the API more ergonomic by eliminating the need for type-specific methods.
-        
+
         Parameters:
             S: The type to convert the column value to. Supported types are:
                Int, Float64, String, and Bool.
-        
+
         Args:
             idx: The column index (0-based).
 
         Returns:
             An Optional containing the value of type T, or None if the column is NULL.
-            
+
         Raises:
             InvalidColumnIndexError: If the column index is out of bounds.
             Error: If the column value cannot be converted to type T.
@@ -238,12 +245,7 @@ struct Rows[statement: Origin, ptr: Origin](Copyable, Iterator, Movable):
             # raise
 
 
-struct MappedRows[
-    T: Copyable & Movable,
-    //,
-    statement: Origin,
-    ptr: Origin,
-    transform: fn (Row) -> T](
+struct MappedRows[T: Copyable & Movable, //, statement: Origin, ptr: Origin, transform: fn (Row) -> T](
     Copyable, Iterator, Movable
 ):
     """An iterator that transforms rows using a mapping function."""

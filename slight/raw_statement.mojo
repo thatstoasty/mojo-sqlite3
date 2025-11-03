@@ -1,6 +1,6 @@
 from slight.c.api import get_sqlite3_handle
 from slight.result import SQLite3Result
-from slight.c.types import sqlite3_stmt, sqlite3_destructor_type
+from slight.c.types import sqlite3_stmt, ResultDestructorFn
 from slight.c.sqlite_string import SQLiteMallocString
 
 
@@ -14,7 +14,7 @@ struct RawStatement(Boolable, Movable):
     fn __bool__(self) -> Bool:
         """Returns True if the statement is valid (i.e., the stmt pointer is not null)."""
         return Bool(self.stmt)
-    
+
     fn __del__(deinit self):
         """Finalizes the statement when it is deleted."""
         if self.stmt:
@@ -57,7 +57,7 @@ struct RawStatement(Boolable, Movable):
         var ptr = get_sqlite3_handle()[].column_text(self.stmt, Int32(idx))
         if not ptr:
             raise Error("unexpected SQLITE_TEXT column type with NULL data")
-        
+
         return StringSlice(unsafe_from_utf8_ptr=ptr)
 
     fn column_blob(self, idx: UInt) raises -> Span[Byte, origin_of(self)]:
@@ -103,7 +103,7 @@ struct RawStatement(Boolable, Movable):
             The number of columns returned by the prepared statement.
         """
         return get_sqlite3_handle()[].column_count(self.stmt)
-    
+
     fn bind_parameter_index(self, var name: String) -> Optional[UInt]:
         """Returns the index of the parameter with the given name.
 
@@ -113,10 +113,10 @@ struct RawStatement(Boolable, Movable):
         Returns:
             The 1-based index of the parameter, or 0 if not found.
         """
-        var result = get_sqlite3_handle()[].bind_parameter_index(self.stmt, name.unsafe_cstr_ptr())
+        var result = get_sqlite3_handle()[].bind_parameter_index(self.stmt, name)
         if result == 0:
             return None
-        
+
         return UInt(result)
 
     fn bind_parameter_count(self) -> Int32:
@@ -126,7 +126,7 @@ struct RawStatement(Boolable, Movable):
             The number of SQL parameters (?, ?NNN, :VVV, @VVV, $VVV) in the statement.
         """
         return get_sqlite3_handle()[].bind_parameter_count(self.stmt)
-    
+
     fn bind_null(self, index: UInt) -> SQLite3Result:
         """Binds a NULL value to the specified parameter.
 
@@ -134,7 +134,6 @@ struct RawStatement(Boolable, Movable):
             index: The 1-based index of the parameter to bind.
         """
         return get_sqlite3_handle()[].bind_null(self.stmt, Int32(index))
-        
 
     fn bind_int64(self, index: UInt, value: Int64) -> SQLite3Result:
         """Binds a 64-bit integer value to the specified parameter.
@@ -144,7 +143,7 @@ struct RawStatement(Boolable, Movable):
             value: The integer value to bind.
         """
         return get_sqlite3_handle()[].bind_int64(self.stmt, Int32(index), value)
-    
+
     fn bind_double(self, index: UInt, value: Float64) -> SQLite3Result:
         """Binds a double-precision float value to the specified parameter.
 
@@ -154,7 +153,7 @@ struct RawStatement(Boolable, Movable):
         """
         return get_sqlite3_handle()[].bind_double(self.stmt, Int32(index), value)
 
-    fn bind_text(self, index: UInt, var value: String, destructor: sqlite3_destructor_type) -> SQLite3Result:
+    fn bind_text(self, index: UInt, var value: String, destructor: ResultDestructorFn) -> SQLite3Result:
         """Binds a text string value to the specified parameter.
 
         Args:
@@ -165,7 +164,7 @@ struct RawStatement(Boolable, Movable):
         return get_sqlite3_handle()[].bind_text(
             self.stmt, Int32(index), value.unsafe_cstr_ptr(), len(value), destructor
         )
-    
+
     fn sql(self) -> Optional[StringSlice[ImmutableAnyOrigin]]:
         """Returns the original SQL text of the prepared statement.
 
@@ -174,7 +173,7 @@ struct RawStatement(Boolable, Movable):
         """
         if not self.stmt:
             return None
-        
+
         # We don't really know the origin of this string, it's a pointer returned by SQLite.
         # But it should be valid as long as the statement is valid, so we use the same origin as the statement.
         return get_sqlite3_handle()[].sql(self.stmt)
@@ -187,7 +186,7 @@ struct RawStatement(Boolable, Movable):
         """
         if not self.stmt:
             return None
-                
+
         # We don't really know the origin of this string, it's a pointer returned by SQLite.
         # But it should be valid as long as the statement is valid, so we use the same origin as the statement.
         return get_sqlite3_handle()[].expanded_sql(self.stmt)
@@ -257,13 +256,13 @@ struct RawStatement(Boolable, Movable):
         var i = Int32(idx)
         if i < 0 or i >= self.column_count():
             return None
-        
+
         # Null ptr indicates an OOM, which we treat as None here.
         return get_sqlite3_handle()[].column_name(self.stmt, i)
 
     fn is_explain(self) -> Int32:
         """Returns whether the prepared statement is an EXPLAIN statement.
-        
+
         * 1 if the prepared statement is an EXPLAIN statement,
         * 2 if the statement is an EXPLAIN QUERY PLAN,
         * 0 if it is an ordinary statement or a NULL pointer.

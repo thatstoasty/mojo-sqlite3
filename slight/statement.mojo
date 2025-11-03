@@ -9,7 +9,7 @@ from slight.c.types import (
     SQLITE_NULL,
     SQLITE_TEXT,
     SQLITE_TRANSIENT,
-    sqlite3_destructor_type,
+    ResultDestructorFn,
 )
 from slight.connection import Connection
 from slight.params import Parameter
@@ -40,7 +40,7 @@ fn eq_ignore_ascii_case(a: Span[Byte], b: Span[Byte]) -> Bool:
 
         if ac >= ord("A") and ac <= ord("Z"):
             ac = ac + 32  # Convert to lowercase
-        
+
         if bc >= ord("A") and bc <= ord("Z"):
             bc = bc + 32  # Convert to lowercase
 
@@ -72,7 +72,7 @@ struct Statement[origin: Origin](Movable):
         """
         self.connection = connection
         self.stmt = stmt^
-    
+
     fn __init__(out self, connection: Pointer[Connection, origin], stmt: ExternalMutPointer[sqlite3_stmt]):
         """Initializes a new Statement with the given connection and raw statement pointer.
 
@@ -82,7 +82,7 @@ struct Statement[origin: Origin](Movable):
         """
         self.connection = connection
         self.stmt = RawStatement(stmt)
-    
+
     # TODO: When should statements be finalized? Also we shouldn't be absorbing the error.
     fn __del__(deinit self):
         """Destructor that automatically finalizes the statement.
@@ -93,7 +93,7 @@ struct Statement[origin: Origin](Movable):
             self.finalize()
         except e:
             print("Error finalizing statement:", e)
-    
+
     fn __repr__(self) -> String:
         """Returns a string representation of the statement for debugging purposes."""
         var sql = String(self.sql().value()) if self.stmt else String("")
@@ -174,10 +174,10 @@ struct Statement[origin: Origin](Movable):
             Error: If the reset operation fails.
         """
         self.connection[].raise_if_error(self.stmt.reset())
-    
+
     fn _execute(mut self) raises -> Int64:
         """Executes the statement.
-        
+
         This is a private function meant to be called by the public execute methods, which handle parameter binding.
         This method is intended for statements that don't return rows (INSERT, UPDATE, DELETE).
         For SELECT statements, use `query()` instead.
@@ -245,7 +245,7 @@ struct Statement[origin: Origin](Movable):
         if params:
             self.bind_parameters_named(params)
         return self._execute()
-    
+
     fn execute(mut self, params: List[Tuple[String, Parameter]]) raises -> Int64:
         """Executes the statement with the given parameters and returns the number of affected rows.
 
@@ -265,7 +265,7 @@ struct Statement[origin: Origin](Movable):
         if params:
             self.bind_parameters_named(params)
         return self._execute()
-    
+
     fn bind_null(self, index: UInt) raises -> None:
         """Binds a NULL value to the specified parameter.
 
@@ -301,7 +301,7 @@ struct Statement[origin: Origin](Movable):
         """
         self.connection[].raise_if_error(self.stmt.bind_double(index, value))
 
-    fn bind_text(self, index: UInt, var value: String, destructor: sqlite3_destructor_type) raises -> None:
+    fn bind_text(self, index: UInt, var value: String, destructor: ResultDestructorFn) raises -> None:
         """Binds a text string value to the specified parameter.
 
         Args:
@@ -313,7 +313,7 @@ struct Statement[origin: Origin](Movable):
             Error: If the bind operation fails.
         """
         self.connection[].raise_if_error(self.stmt.bind_text(index, value, destructor))
-    
+
     fn parameter_index(self, var name: String) -> Optional[UInt]:
         """Returns the index of the parameter with the specified name.
 
@@ -338,7 +338,7 @@ struct Statement[origin: Origin](Movable):
         if parameter.isa[NoneType]():
             self.bind_null(index)
         elif parameter.isa[String]():
-            var des = UnsafePointerV2(to=SQLITE_TRANSIENT).bitcast[sqlite3_destructor_type]()
+            var des = UnsafePointerV2(to=SQLITE_TRANSIENT).bitcast[ResultDestructorFn]()
             self.bind_text(index, parameter[String], des[])
         elif parameter.isa[Int]():
             self.bind_int64(index, Int64(parameter[Int]))
@@ -390,7 +390,7 @@ struct Statement[origin: Origin](Movable):
             self.bind_parameter(p, UInt(index))
         if index != expected:
             raise Error("Invalid parameter count: ", index, ", expected: ", expected)
-    
+
     fn bind_parameters_named(mut self, params: Dict[String, Parameter]) raises -> None:
         """Binds a list of parameters to the statement in order.
 
@@ -407,7 +407,7 @@ struct Statement[origin: Origin](Movable):
                 raise Error("ParameterNotFoundError: Invalid parameter name: ", kv.key)
 
             self.bind_parameter(kv.value, i[])
-    
+
     fn bind_parameters_named(mut self, params: List[Tuple[String, Parameter]]) raises -> None:
         """Binds a list of parameters to the statement in order.
 
@@ -442,7 +442,7 @@ struct Statement[origin: Origin](Movable):
         """
         self.bind_parameters(params)
         return Rows(Pointer(to=self))
-    
+
     fn query(mut self, params: Dict[String, Parameter]) raises -> Rows[origin, origin_of(self)]:
         """Executes the statement as a query and returns an iterator over the result rows.
 
@@ -480,13 +480,8 @@ struct Statement[origin: Origin](Movable):
         return Rows(Pointer(to=self))
 
     fn query_map[
-        T: Copyable & Movable,
-        //,
-        transform: fn (Row) -> T
-    ](
-        mut self,
-        params: List[Parameter] = []
-    ) raises -> MappedRows[origin, origin_of(self), transform]:
+        T: Copyable & Movable, //, transform: fn (Row) -> T
+    ](mut self, params: List[Parameter] = []) raises -> MappedRows[origin, origin_of(self), transform]:
         """Executes the query and returns a mapped iterator that transforms each row.
 
         This method applies a transformation function to each row returned by the query,
@@ -506,15 +501,10 @@ struct Statement[origin: Origin](Movable):
             Error: If parameter binding fails or the query execution fails.
         """
         return MappedRows[origin, origin_of(self), transform](self.query(params))
-    
+
     fn query_map[
-        T: Copyable & Movable,
-        //,
-        transform: fn (Row) -> T
-    ](
-        mut self,
-        params: Dict[String, Parameter]
-    ) raises -> MappedRows[origin, origin_of(self), transform]:
+        T: Copyable & Movable, //, transform: fn (Row) -> T
+    ](mut self, params: Dict[String, Parameter]) raises -> MappedRows[origin, origin_of(self), transform]:
         """Executes the query and returns a mapped iterator that transforms each row.
 
         This method applies a transformation function to each row returned by the query,
@@ -534,15 +524,10 @@ struct Statement[origin: Origin](Movable):
             Error: If parameter binding fails or the query execution fails.
         """
         return MappedRows[origin, origin_of(self), transform](self.query(params))
-    
+
     fn query_map[
-        T: Copyable & Movable,
-        //,
-        transform: fn (Row) -> T
-    ](
-        mut self,
-        params: List[Tuple[String, Parameter]]
-    ) raises -> MappedRows[origin, origin_of(self), transform]:
+        T: Copyable & Movable, //, transform: fn (Row) -> T
+    ](mut self, params: List[Tuple[String, Parameter]]) raises -> MappedRows[origin, origin_of(self), transform]:
         """Executes the query and returns a mapped iterator that transforms each row.
 
         This method applies a transformation function to each row returned by the query,
@@ -562,11 +547,9 @@ struct Statement[origin: Origin](Movable):
             Error: If parameter binding fails or the query execution fails.
         """
         return MappedRows[origin, origin_of(self), transform](self.query(params))
-    
+
     fn query_row[
-        T: Copyable & Movable,
-        //,
-        transform: fn (Row) raises -> T
+        T: Copyable & Movable, //, transform: fn (Row) raises -> T
     ](mut self, params: List[Parameter] = []) raises -> T:
         """Executes the query and returns a single row.
 
@@ -589,13 +572,11 @@ struct Statement[origin: Origin](Movable):
         var rows = self.query(params)
         if not rows.__has_next__():
             raise Error("No rows returned by query.")
-        
+
         return transform(rows.__next__())
-    
+
     fn query_row[
-        T: Copyable & Movable,
-        //,
-        transform: fn (Row) raises -> T
+        T: Copyable & Movable, //, transform: fn (Row) raises -> T
     ](mut self, params: Dict[String, Parameter]) raises -> T:
         """Executes the query and returns a single row.
 
@@ -618,13 +599,11 @@ struct Statement[origin: Origin](Movable):
         var rows = self.query(params)
         if not rows.__has_next__():
             raise Error("No rows returned by query.")
-        
+
         return transform(rows.__next__())
-    
+
     fn query_row[
-        T: Copyable & Movable,
-        //,
-        transform: fn (Row) raises -> T
+        T: Copyable & Movable, //, transform: fn (Row) raises -> T
     ](mut self, params: List[Tuple[String, Parameter]]) raises -> T:
         """Executes the query and returns a single row.
 
@@ -647,7 +626,7 @@ struct Statement[origin: Origin](Movable):
         var rows = self.query(params)
         if not rows.__has_next__():
             raise Error("No rows returned by query.")
-        
+
         return transform(rows.__next__())
 
     fn exists(mut self, params: List[Parameter] = []) raises -> Bool:
@@ -722,7 +701,7 @@ struct Statement[origin: Origin](Movable):
             The original SQL statement as a StringSlice.
         """
         return self.stmt.sql()
-    
+
     fn expanded_sql(self) raises -> Optional[String]:
         """Returns the SQL text of the prepared statement with bound parameters expanded.
 
@@ -737,7 +716,7 @@ struct Statement[origin: Origin](Movable):
             return None
 
         return String(sql.value().as_string_slice())
-    
+
     fn column_name(self, idx: UInt) raises -> StringSlice[ImmutableAnyOrigin]:
         """Returns the name of the column at the specified index.
 
@@ -753,7 +732,7 @@ struct Statement[origin: Origin](Movable):
         var name = self.stmt.column_name(idx)
         if not name:
             raise InvalidColumnIndexError
-        
+
         return name.value()
 
     fn column_index(self, name: StringSlice) raises -> UInt:
@@ -838,7 +817,7 @@ struct Statement[origin: Origin](Movable):
 
     fn is_explain(self) -> Int32:
         """Returns whether the prepared statement is an EXPLAIN statement.
-        
+
         * 1 if the prepared statement is an EXPLAIN statement,
         * 2 if the statement is an EXPLAIN QUERY PLAN,
         * 0 if it is an ordinary statement or a NULL pointer.
@@ -851,19 +830,19 @@ struct Statement[origin: Origin](Movable):
 
     fn column_names(self) raises -> List[StringSlice[ImmutableAnyOrigin]]:
         """Get all the column names in the result set of the prepared statement.
-        
+
         If associated DB schema can be altered concurrently, you should make
         sure that current statement has already been stepped once before
         calling this method.
-        
+
         Returns:
             A list of column names.
-        
+
         Raises:
             Error: If a column index is out of bounds.
         """
         var n = self.column_count()
-        var cols = List[StringSlice[ImmutableAnyOrigin]](capacity=n)
+        var cols = List[StringSlice[ImmutableAnyOrigin]](capacity=Int(n))
         for i in range(n):
             cols.append(self.column_name(UInt(i)))
         return cols^

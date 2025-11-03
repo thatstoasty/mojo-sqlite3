@@ -50,6 +50,7 @@ struct OpenFlag(Copyable, Movable, ImplicitlyCopyable):
 
     var value: Int32
     """The integer value of the flags."""
+
     alias READ_ONLY = Self(SQLITE_OPEN_READONLY)
      """Open the database in read-only mode. The database must already exist."""
     alias CREATE = Self(SQLITE_OPEN_CREATE)

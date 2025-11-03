@@ -34,7 +34,7 @@ from slight.c.raw_bindings import (
 
 
 @register_passable("trivial")
-struct SQLite3Result(Copyable, Movable, ImplicitlyCopyable, Intable, EqualityComparable, Writable):
+struct SQLite3Result(Copyable, EqualityComparable, ImplicitlyCopyable, Intable, Movable, Writable):
     var value: Int32
     alias SQLITE_OK: Self = SQLITE_OK
     alias SQLITE_ERROR: Self = SQLITE_ERROR
@@ -75,15 +75,15 @@ struct SQLite3Result(Copyable, Movable, ImplicitlyCopyable, Intable, EqualityCom
     @implicit
     fn __init__(out self, value: Int):
         self.value = value
-    
+
     fn __int__(self) -> Int:
         return Int(self.value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self.value == other.value
-    
+
     fn __eq__(self, other: Int32) -> Bool:
         return self.value == other
-    
+
     fn write_to[W: Writer](self, mut writer: W):
         writer.write(self.value)

@@ -1,5 +1,6 @@
 from utils.variant import Variant
 
+
 @fieldwise_init
 struct Parameter(Copyable, Movable):
     """A parameter for a SQLite3 prepared statement."""
@@ -33,7 +34,7 @@ struct Parameter(Copyable, Movable):
     @implicit
     fn __init__(out self, value: String):
         self.value = value.copy()
-    
+
     @implicit
     fn __init__(out self, value: Int):
         self.value = value.copy()
