@@ -11,6 +11,14 @@ struct RawStatement(Boolable, Movable):
     var stmt: ExternalMutPointer[sqlite3_stmt]
     """A pointer to the `sqlite3_stmt` that represents this statement."""
 
+    fn __init__(out self):
+        """Creates an empty RawStatement.
+
+        Returns:
+            A new `RawStatement` instance with a null pointer.
+        """
+        self.stmt = ExternalMutPointer[sqlite3_stmt]()
+
     fn __bool__(self) -> Bool:
         """Returns True if the statement is valid (i.e., the stmt pointer is not null)."""
         return Bool(self.stmt)
