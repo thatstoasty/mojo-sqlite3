@@ -6,7 +6,7 @@ from slight.c.api import get_sqlite3_handle
 struct SQLiteMallocString(Copyable, Movable):
     """A string we own that's allocated on the SQLite heap. Automatically calls `sqlite3_free` when deleted."""
 
-    var ptr: UnsafePointer[c_char]
+    var ptr: ExternalImmutPointer[c_char]
     """A pointer to the C string allocated by SQLite."""
 
     fn __del__(deinit self):

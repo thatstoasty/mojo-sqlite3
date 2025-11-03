@@ -400,7 +400,7 @@ struct Connection(Movable):
             db_name: The database name (main, temp, ATTACH name), or None to search all databases.
             table_name: The name of the table.
             column_name: The name of the column.
-            
+
         Returns:
             True if the column exists, False otherwise.
             
@@ -428,58 +428,58 @@ struct Connection(Movable):
         """
         return self.exists(db_name, table_name, None)
 
-    fn column_metadata(
-        self,
-        var db_name: Optional[String],
-        var table_name: String,
-        var column_name: String,
-    ) raises -> ColumnMetadata:
-        """Extract metadata of column at specified index.
+    # fn column_metadata(
+    #     self,
+    #     var db_name: Optional[String],
+    #     var table_name: String,
+    #     var column_name: String,
+    # ) raises -> ColumnMetadata:
+    #     """Extract metadata of column at specified index.
         
-        Args:
-            db_name: The database name (main, temp, ATTACH name), or None to search all databases.
-            table_name: The name of the table.
-            column_name: The name of the column.
+    #     Args:
+    #         db_name: The database name (main, temp, ATTACH name), or None to search all databases.
+    #         table_name: The name of the table.
+    #         column_name: The name of the column.
 
-        Returns:
-            `ColumnMetadata` containing:
-            - declared data type (Optional[String])
-            - name of default collation sequence (Optional[String])
-            - True if column has a NOT NULL constraint
-            - True if column is part of the PRIMARY KEY
-            - True if column is AUTOINCREMENT
+    #     Returns:
+    #         `ColumnMetadata` containing:
+    #         - declared data type (Optional[String])
+    #         - name of default collation sequence (Optional[String])
+    #         - True if column has a NOT NULL constraint
+    #         - True if column is part of the PRIMARY KEY
+    #         - True if column is AUTOINCREMENT
             
-        Raises:
-            Error: If the underlying SQLite call fails.
-        """
-        var data_type_ptr = UnsafePointer[Int8, mut=False]()
-        var coll_seq_ptr = UnsafePointer[Int8, mut=False]()
-        var db_ptr = db_name.value().unsafe_cstr_ptr() if db_name else UnsafePointer[Int8, mut=False]()
-        var not_null: Int32 = 0
-        var primary_key: Int32 = 0
-        var auto_inc: Int32 = 0
+    #     Raises:
+    #         Error: If the underlying SQLite call fails.
+    #     """
+    #     var data_type_ptr = ExternalImmutPointer[Int8]()
+    #     var coll_seq_ptr = ExternalImmutPointer[Int8]()
+    #     var db_ptr = db_name.value().unsafe_cstr_ptr() if db_name else ExternalImmutPointer[Int8]()
+    #     var not_null: Int32 = 0
+    #     var primary_key: Int32 = 0
+    #     var auto_inc: Int32 = 0
 
-        self.raise_if_error(
-            get_sqlite3_handle()[].table_column_metadata(
-                self.db.db,
-                db_ptr,
-                table_name.unsafe_cstr_ptr(),
-                column_name.unsafe_cstr_ptr(),
-                UnsafePointer(to=data_type_ptr),
-                UnsafePointer(to=coll_seq_ptr),
-                UnsafePointer(to=not_null),
-                UnsafePointer(to=primary_key),
-                UnsafePointer(to=auto_inc),
-            )
-        )
+    #     self.raise_if_error(
+    #         get_sqlite3_handle()[].table_column_metadata(
+    #             self.db.db,
+    #             db_ptr,
+    #             table_name.unsafe_cstr_ptr(),
+    #             column_name.unsafe_cstr_ptr(),
+    #             UnsafePointerV2(to=data_type_ptr),
+    #             UnsafePointerV2(to=coll_seq_ptr),
+    #             UnsafePointerV2(to=not_null),
+    #             UnsafePointerV2(to=primary_key),
+    #             UnsafePointerV2(to=auto_inc),
+    #         )
+    #     )
 
-        return ColumnMetadata(
-            data_type=String(unsafe_from_utf8_ptr=data_type_ptr) if data_type_ptr else Optional[String](None),
-            collation_sequence=String(unsafe_from_utf8_ptr=coll_seq_ptr) if coll_seq_ptr else Optional[String](None),
-            not_null=not_null != 0,
-            primary_key=primary_key != 0,
-            auto_increment=auto_inc != 0
-        )
+    #     return ColumnMetadata(
+    #         data_type=String(unsafe_from_utf8_ptr=data_type_ptr) if data_type_ptr else Optional[String](None),
+    #         collation_sequence=String(unsafe_from_utf8_ptr=coll_seq_ptr) if coll_seq_ptr else Optional[String](None),
+    #         not_null=not_null != 0,
+    #         primary_key=primary_key != 0,
+    #         auto_increment=auto_inc != 0
+    #     )
 
     fn exists(
         self,
@@ -500,23 +500,24 @@ struct Connection(Movable):
         Raises:
             Error: If the underlying SQLite call fails with an unexpected error.
         """
-        var db_ptr = db_name.value().unsafe_cstr_ptr() if db_name else UnsafePointer[Int8, mut=False]()
-        var column_ptr = column_name.value().unsafe_cstr_ptr() if column_name else UnsafePointer[Int8, mut=False]()
-        var r = get_sqlite3_handle()[].table_column_metadata(
-            self.db.db,
-            db_ptr,
-            table_name.unsafe_cstr_ptr(),
-            column_ptr,
-            UnsafePointer[UnsafePointer[Int8, mut=False]](),
-            UnsafePointer[UnsafePointer[Int8, mut=False]](),
-            UnsafePointer[Int32](),
-            UnsafePointer[Int32](),
-            UnsafePointer[Int32](),
-        )
+        return True
+        # var db_ptr = db_name.value().unsafe_cstr_ptr() if db_name else ExternalImmutPointer[Int8]()
+        # var column_ptr = column_name.value().unsafe_cstr_ptr() if column_name else ExternalImmutPointer[Int8]()
+        # var r = get_sqlite3_handle()[].table_column_metadata(
+        #     self.db.db,
+        #     db_ptr,
+        #     table_name.unsafe_cstr_ptr(),
+        #     column_ptr,
+        #     UnsafePointerV2[Int8, ImmutableAnyOrigin](),
+        #     UnsafePointerV2[Int8, ImmutableAnyOrigin](),
+        #     ExternalMutPointer[Int32](),
+        #     ExternalMutPointer[Int32](),
+        #     ExternalMutPointer[Int32](),
+        # )
 
-        if r == SQLite3Result.SQLITE_OK:
-            return True
-        elif r == SQLite3Result.SQLITE_ERROR:
-            return False
-        else:
-            raise self.decode_error(r)
+        # if r == SQLite3Result.SQLITE_OK:
+        #     return True
+        # elif r == SQLite3Result.SQLITE_ERROR:
+        #     return False
+        # else:
+        #     raise self.decode_error(r)

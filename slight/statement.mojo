@@ -73,7 +73,7 @@ struct Statement[origin: Origin](Movable):
         self.connection = connection
         self.stmt = stmt^
     
-    fn __init__(out self, connection: Pointer[Connection, origin], stmt: UnsafePointer[sqlite3_stmt]):
+    fn __init__(out self, connection: Pointer[Connection, origin], stmt: ExternalMutPointer[sqlite3_stmt]):
         """Initializes a new Statement with the given connection and raw statement pointer.
 
         Args:
@@ -107,7 +107,7 @@ struct Statement[origin: Origin](Movable):
         """
         return UInt(self.stmt.column_count())
 
-    fn value_ref(self, col: UInt) raises -> ValueRef[origin_of(self.stmt)]:
+    fn value_ref(self, col: UInt) raises -> ValueRef[origin_of(self)]:
         """Returns a reference to the value in the specified column of the current row.
 
         Args:
@@ -121,15 +121,15 @@ struct Statement[origin: Origin](Movable):
         """
         var column_type = self.stmt.column_type(col)
         if column_type == SQLITE_NULL:
-            return ValueRef[origin_of(self.stmt)](SQLite3Null())
+            return ValueRef[origin_of(self)](SQLite3Null())
         elif column_type == SQLITE_INTEGER:
-            return ValueRef[origin_of(self.stmt)](SQLite3Integer(self.stmt.column_int64(col)))
+            return ValueRef[origin_of(self)](SQLite3Integer(self.stmt.column_int64(col)))
         elif column_type == SQLITE_FLOAT:
-            return ValueRef[origin_of(self.stmt)](SQLite3Real(self.stmt.column_double(col)))
+            return ValueRef[origin_of(self)](SQLite3Real(self.stmt.column_double(col)))
         elif column_type == SQLITE_TEXT:
-            return ValueRef[origin_of(self.stmt)](SQLite3Text(self.stmt.column_text(col)))
+            return ValueRef[origin_of(self)](SQLite3Text(self.stmt.column_text(col)))
         elif column_type == SQLITE_BLOB:
-            return ValueRef[origin_of(self.stmt)](SQLite3Blob(self.stmt.column_blob(col)))
+            return ValueRef[origin_of(self)](SQLite3Blob(self.stmt.column_blob(col)))
         else:
             raise Error("Unknown column type: ", column_type)
 
@@ -338,7 +338,7 @@ struct Statement[origin: Origin](Movable):
         if parameter.isa[NoneType]():
             self.bind_null(index)
         elif parameter.isa[String]():
-            var des = UnsafePointer(to=SQLITE_TRANSIENT).bitcast[sqlite3_destructor_type]()
+            var des = UnsafePointerV2(to=SQLITE_TRANSIENT).bitcast[sqlite3_destructor_type]()
             self.bind_text(index, parameter[String], des[])
         elif parameter.isa[Int]():
             self.bind_int64(index, Int64(parameter[Int]))
@@ -715,7 +715,7 @@ struct Statement[origin: Origin](Movable):
         """
         self.connection[].raise_if_error(self.stmt.clear_bindings())
 
-    fn sql(self) -> Optional[StringSlice[origin_of(self.stmt)]]:
+    fn sql(self) -> Optional[StringSlice[ImmutableAnyOrigin]]:
         """Returns the original SQL text of the prepared statement.
 
         Returns:
@@ -738,7 +738,7 @@ struct Statement[origin: Origin](Movable):
 
         return String(sql.value().as_string_slice())
     
-    fn column_name(self, idx: UInt) raises -> StringSlice[origin_of(self.stmt)]:
+    fn column_name(self, idx: UInt) raises -> StringSlice[ImmutableAnyOrigin]:
         """Returns the name of the column at the specified index.
 
         Args:
@@ -849,7 +849,7 @@ struct Statement[origin: Origin](Movable):
         """Returns whether the prepared statement is read-only."""
         return self.stmt.is_read_only()
 
-    fn column_names(self) raises -> List[StringSlice[origin_of(self.stmt)]]:
+    fn column_names(self) raises -> List[StringSlice[ImmutableAnyOrigin]]:
         """Get all the column names in the result set of the prepared statement.
         
         If associated DB schema can be altered concurrently, you should make
@@ -863,7 +863,7 @@ struct Statement[origin: Origin](Movable):
             Error: If a column index is out of bounds.
         """
         var n = self.column_count()
-        var cols = List[StringSlice[origin_of(self.stmt)]](capacity=n)
+        var cols = List[StringSlice[ImmutableAnyOrigin]](capacity=n)
         for i in range(n):
             cols.append(self.column_name(UInt(i)))
         return cols^

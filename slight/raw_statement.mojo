@@ -8,7 +8,7 @@ from slight.c.sqlite_string import SQLiteMallocString
 struct RawStatement(Boolable, Movable):
     """A raw SQL statement wrapper around a pointer to a `sqlite3_stmt`."""
 
-    var stmt: UnsafePointer[sqlite3_stmt]
+    var stmt: ExternalMutPointer[sqlite3_stmt]
     """A pointer to the `sqlite3_stmt` that represents this statement."""
 
     fn __bool__(self) -> Bool:
@@ -42,7 +42,7 @@ struct RawStatement(Boolable, Movable):
         """
         return get_sqlite3_handle()[].column_double(self.stmt, Int32(idx))
 
-    fn column_text(self, idx: UInt) raises -> StringSlice[origin_of(self)]:
+    fn column_text(self, idx: UInt) raises -> StringSlice[ImmutableAnyOrigin]:
         """Returns the value of the specified column as a text string.
 
         Args:
@@ -57,7 +57,8 @@ struct RawStatement(Boolable, Movable):
         var ptr = get_sqlite3_handle()[].column_text(self.stmt, Int32(idx))
         if not ptr:
             raise Error("unexpected SQLITE_TEXT column type with NULL data")
-        return StringSlice[origin_of(self)](unsafe_from_utf8_ptr=ptr)
+        
+        return StringSlice(unsafe_from_utf8_ptr=ptr)
 
     fn column_blob(self, idx: UInt) raises -> Span[Byte, origin_of(self)]:
         """Returns the value of the specified column as binary data.
@@ -165,7 +166,7 @@ struct RawStatement(Boolable, Movable):
             self.stmt, Int32(index), value.unsafe_cstr_ptr(), len(value), destructor
         )
     
-    fn sql(self) -> Optional[StringSlice[origin_of(self)]]:
+    fn sql(self) -> Optional[StringSlice[ImmutableAnyOrigin]]:
         """Returns the original SQL text of the prepared statement.
 
         Returns:
@@ -176,7 +177,7 @@ struct RawStatement(Boolable, Movable):
         
         # We don't really know the origin of this string, it's a pointer returned by SQLite.
         # But it should be valid as long as the statement is valid, so we use the same origin as the statement.
-        return StringSlice[origin_of(self)](unsafe_from_utf8_ptr=get_sqlite3_handle()[].sql(self.stmt))
+        return get_sqlite3_handle()[].sql(self.stmt)
 
     fn expanded_sql(self) -> Optional[SQLiteMallocString]:
         """Returns the SQL text of the prepared statement with bound parameters expanded.
@@ -201,7 +202,7 @@ struct RawStatement(Boolable, Movable):
             The SQLite result code from finalizing the statement.
         """
         var old_stmt = self.stmt
-        self.stmt = UnsafePointer[sqlite3_stmt]()
+        self.stmt = ExternalMutPointer[sqlite3_stmt]()
 
         return get_sqlite3_handle()[].finalize(old_stmt)
 
@@ -244,7 +245,7 @@ struct RawStatement(Boolable, Movable):
         """
         return get_sqlite3_handle()[].clear_bindings(self.stmt)
 
-    fn column_name(self, idx: UInt) -> Optional[StringSlice[origin_of(self)]]:
+    fn column_name(self, idx: UInt) -> Optional[StringSlice[ImmutableAnyOrigin]]:
         """Returns the name of the specified column.
 
         Args:
@@ -258,12 +259,7 @@ struct RawStatement(Boolable, Movable):
             return None
         
         # Null ptr indicates an OOM, which we treat as None here.
-        var ptr = get_sqlite3_handle()[].column_name(self.stmt, i)
-        if not ptr:
-            return None
-        
-        # TODO: Handle raising for non utf8 names
-        return StringSlice[origin_of(self)](unsafe_from_utf8_ptr=ptr)
+        return get_sqlite3_handle()[].column_name(self.stmt, i)
 
     fn is_explain(self) -> Int32:
         """Returns whether the prepared statement is an EXPLAIN statement.

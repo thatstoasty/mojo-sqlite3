@@ -107,7 +107,7 @@ struct ValueRef[stmt: Origin]:
         """
         self.value = value^
 
-    fn __init__(out self, var value: SQLite3Text[stmt]):
+    fn __init__(out self, var value: SQLite3Text):
         """Initialize a ValueRef with a TEXT value.
 
         Args:
@@ -115,7 +115,7 @@ struct ValueRef[stmt: Origin]:
         """
         self.value = value^
 
-    fn __init__(out self, var value: SQLite3Blob[stmt]):
+    fn __init__(out self, var value: SQLite3Blob):
         """Initialize a ValueRef with a BLOB value.
 
         Args:

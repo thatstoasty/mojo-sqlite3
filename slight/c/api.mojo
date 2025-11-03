@@ -1,17 +1,17 @@
 from sys.ffi import _get_global, _Global
 
-from memory import UnsafePointer
+from memory import UnsafeMutPointer
 from slight.bindings import sqlite3
 from slight.c.raw_bindings import _sqlite3
 
 
-fn _init_global() -> UnsafePointer[NoneType]:
+fn _init_global() -> OpaquePointer:
     var ptr = UnsafePointer[sqlite3].alloc(1)
     ptr[] = sqlite3()
     return ptr.bitcast[NoneType]()
 
 
-fn _destroy_global(lib: UnsafePointer[NoneType]):
+fn _destroy_global(lib: OpaquePointer):
     var p = lib.bitcast[sqlite3]()
     p[].lib.lib.close()
     lib.free()

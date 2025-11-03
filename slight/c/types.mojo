@@ -59,11 +59,11 @@ alias __clang_svboolx2_t = SIMD[DType.bool, 2]
 alias __clang_svboolx4_t = SIMD[DType.bool, 4]
 # alias __SVCount_t = __SVCount_t
 # alias __mfp8 = __mfp8
-alias __builtin_ms_va_list = UnsafePointer[Int8]
-alias __builtin_va_list = UnsafePointer[Int8]
+alias __builtin_ms_va_list = ExternalPointer[Int8]
+alias __builtin_va_list = ExternalPointer[Int8]
 # alias __gnuc_va_list =
 # alias va_list =
-alias sqlite3_version = UnsafePointer[Int8]  # Failed to parse array size # extern
+alias sqlite3_version = ExternalPointer[Int8]  # Failed to parse array size # extern
 # Run-Time Library Version Numbers
 # KEYWORDS: sqlite3_version sqlite3_sourceid
 #
@@ -102,7 +102,7 @@ alias sqlite_uint64 = UInt64
 alias sqlite3_int64 = Int64
 alias sqlite3_uint64 = UInt64
 alias sqlite3_callback = fn (
-    UnsafePointer[NoneType], Int32, UnsafePointer[UnsafePointer[Int8]], UnsafePointer[UnsafePointer[Int8]]
+    ExternalPointer[NoneType], Int32, ExternalPointer[ExternalPointer[Int8]], ExternalPointer[ExternalPointer[Int8]]
 ) -> Int32
 """The type for a callback function. This is legacy and deprecated.  It is included for historical compatibility and is not documented."""
 alias __int128_t = Int128
@@ -128,7 +128,7 @@ struct __NSConstantString_tag(Copyable & Movable):
 
 alias __NSConstantString = __NSConstantString_tag
 
-alias sqlite3_filename = UnsafePointer[Int8]
+alias sqlite3_filename = ExternalPointer[Int8]
 """Used by SQLite to pass filenames to the
 xOpen method of a [VFS]. It may be cast to (const char) and treated
 as a normal, nul-terminated, UTF-8 buffer containing the filename, but
@@ -178,7 +178,7 @@ struct sqlite3_file(Copyable & Movable):
     I/O operations on the open file.
     """
 
-    var pMethods: UnsafePointer[_sqlite3_file_sqlite3_io_methods]
+    var pMethods: ExternalPointer[_sqlite3_file_sqlite3_io_methods]
 
 
 @register_passable("trivial")
@@ -219,10 +219,10 @@ alias SQLITE_TRANSIENT = -1
 
 @register_passable("trivial")
 struct Fts5PhraseIter(Copyable & Movable):
-    var a: UnsafePointer[
+    var a: ExternalPointer[
         UInt8
     ]  # FieldDeclNode: This is a const param, but shouldn't be assigned as an alias since it doesn't have a value.
-    var b: UnsafePointer[
+    var b: ExternalPointer[
         UInt8
     ]  # FieldDeclNode: This is a const param, but shouldn't be assigned as an alias since it doesn't have a value.
 
@@ -235,54 +235,54 @@ struct Fts5ExtensionApi(Copyable & Movable):
     the sqlite3_module.xFindFunction() method."""
 
     var iVersion: Int32
-    var xUserData: fn (UnsafePointer[Fts5Context]) -> OpaquePointer
-    var xColumnCount: fn (UnsafePointer[Fts5Context]) -> Int32
-    var xRowCount: fn (UnsafePointer[Fts5Context], UnsafePointer[sqlite3_int64]) -> Int32
-    var xColumnTotalSize: fn (UnsafePointer[Fts5Context], Int32, UnsafePointer[sqlite3_int64]) -> Int32
-    # var xTokenize: fn(OpaquePointer, Int32, UnsafePointer[Int8], Int32, Int32, Int32) -> UnsafePointer[Fts5Context], UnsafePointer[Int8], Int32, OpaquePointer, Int32 -> Int32 # FieldDeclNode: This is a const param, but shouldn't be assigned as an alias since it doesn't have a value.
-    var xPhraseCount: fn (UnsafePointer[Fts5Context]) -> Int32
-    var xPhraseSize: fn (UnsafePointer[Fts5Context], Int32) -> Int32
-    var xInstCount: fn (UnsafePointer[Fts5Context], UnsafePointer[Int32]) -> Int32
+    var xUserData: fn (ExternalPointer[Fts5Context]) -> OpaquePointer
+    var xColumnCount: fn (ExternalPointer[Fts5Context]) -> Int32
+    var xRowCount: fn (ExternalPointer[Fts5Context], ExternalPointer[sqlite3_int64]) -> Int32
+    var xColumnTotalSize: fn (ExternalPointer[Fts5Context], Int32, ExternalPointer[sqlite3_int64]) -> Int32
+    # var xTokenize: fn(OpaquePointer, Int32, ExternalPointer[Int8], Int32, Int32, Int32) -> ExternalPointer[Fts5Context], ExternalPointer[Int8], Int32, OpaquePointer, Int32 -> Int32 # FieldDeclNode: This is a const param, but shouldn't be assigned as an alias since it doesn't have a value.
+    var xPhraseCount: fn (ExternalPointer[Fts5Context]) -> Int32
+    var xPhraseSize: fn (ExternalPointer[Fts5Context], Int32) -> Int32
+    var xInstCount: fn (ExternalPointer[Fts5Context], ExternalPointer[Int32]) -> Int32
     var xInst: fn (
-        UnsafePointer[Fts5Context], Int32, UnsafePointer[Int32], UnsafePointer[Int32], UnsafePointer[Int32]
+        ExternalPointer[Fts5Context], Int32, ExternalPointer[Int32], ExternalPointer[Int32], ExternalPointer[Int32]
     ) -> Int32
-    var xRowid: fn (UnsafePointer[Fts5Context]) -> sqlite3_int64
+    var xRowid: fn (ExternalPointer[Fts5Context]) -> sqlite3_int64
     var xColumnText: fn (
-        UnsafePointer[Fts5Context], Int32, UnsafePointer[UnsafePointer[Int8]], UnsafePointer[Int32]
+        ExternalPointer[Fts5Context], Int32, ExternalPointer[ExternalPointer[Int8]], ExternalPointer[Int32]
     ) -> Int32  # FieldDeclNode: This is a const param, but shouldn't be assigned as an alias since it doesn't have a value.
-    var xColumnSize: fn (UnsafePointer[Fts5Context], Int32, UnsafePointer[Int32]) -> Int32
-    # var xQueryPhrase: fn(read UnsafePointer[Fts5ExtensionApi], UnsafePointer[Fts5Context], void ) -> UnsafePointer[Fts5Context], Int32, OpaquePointer, Int32 -> Int32
-    # var xSetAuxdata: fn(void ) -> UnsafePointer[Fts5Context], OpaquePointer, NoneType -> Int32
-    var xGetAuxdata: fn (UnsafePointer[Fts5Context], Int32) -> OpaquePointer
+    var xColumnSize: fn (ExternalPointer[Fts5Context], Int32, ExternalPointer[Int32]) -> Int32
+    # var xQueryPhrase: fn(read ExternalPointer[Fts5ExtensionApi], ExternalPointer[Fts5Context], void ) -> ExternalPointer[Fts5Context], Int32, OpaquePointer, Int32 -> Int32
+    # var xSetAuxdata: fn(void ) -> ExternalPointer[Fts5Context], OpaquePointer, NoneType -> Int32
+    var xGetAuxdata: fn (ExternalPointer[Fts5Context], Int32) -> OpaquePointer
     var xPhraseFirst: fn (
-        UnsafePointer[Fts5Context], Int32, UnsafePointer[Fts5PhraseIter], UnsafePointer[Int32], UnsafePointer[Int32]
+        ExternalPointer[Fts5Context], Int32, ExternalPointer[Fts5PhraseIter], ExternalPointer[Int32], ExternalPointer[Int32]
     ) -> Int32
     var xPhraseNext: fn (
-        UnsafePointer[Fts5Context], UnsafePointer[Fts5PhraseIter], UnsafePointer[Int32], UnsafePointer[Int32]
+        ExternalPointer[Fts5Context], ExternalPointer[Fts5PhraseIter], ExternalPointer[Int32], ExternalPointer[Int32]
     ) -> NoneType
     var xPhraseFirstColumn: fn (
-        UnsafePointer[Fts5Context], Int32, UnsafePointer[Fts5PhraseIter], UnsafePointer[Int32]
+        ExternalPointer[Fts5Context], Int32, ExternalPointer[Fts5PhraseIter], ExternalPointer[Int32]
     ) -> Int32
     var xPhraseNextColumn: fn (
-        UnsafePointer[Fts5Context], UnsafePointer[Fts5PhraseIter], UnsafePointer[Int32]
+        ExternalPointer[Fts5Context], ExternalPointer[Fts5PhraseIter], ExternalPointer[Int32]
     ) -> NoneType
     var xQueryToken: fn (
-        UnsafePointer[Fts5Context], Int32, Int32, UnsafePointer[UnsafePointer[Int8]], UnsafePointer[Int32]
+        ExternalPointer[Fts5Context], Int32, Int32, ExternalPointer[ExternalPointer[Int8]], ExternalPointer[Int32]
     ) -> Int32  # FieldDeclNode: This is a const param, but shouldn't be assigned as an alias since it doesn't have a value.
     var xInstToken: fn (
-        UnsafePointer[Fts5Context], Int32, Int32, UnsafePointer[UnsafePointer[Int8]], UnsafePointer[Int32]
+        ExternalPointer[Fts5Context], Int32, Int32, ExternalPointer[ExternalPointer[Int8]], ExternalPointer[Int32]
     ) -> Int32  # FieldDeclNode: This is a const param, but shouldn't be assigned as an alias since it doesn't have a value.
     var xColumnLocale: fn (
-        UnsafePointer[Fts5Context], Int32, UnsafePointer[UnsafePointer[Int8]], UnsafePointer[Int32]
+        ExternalPointer[Fts5Context], Int32, ExternalPointer[ExternalPointer[Int8]], ExternalPointer[Int32]
     ) -> Int32  # FieldDeclNode: This is a const param, but shouldn't be assigned as an alias since it doesn't have a value.
-    # var xTokenize_v2: fn(OpaquePointer, Int32, UnsafePointer[Int8], Int32, Int32, Int32) -> UnsafePointer[Fts5Context], UnsafePointer[Int8], Int32, UnsafePointer[Int8], Int32, OpaquePointer, Int32 -> Int32 # FieldDeclNode: This is a const param, but shouldn't be assigned as an alias since it doesn't have a value.
+    # var xTokenize_v2: fn(OpaquePointer, Int32, ExternalPointer[Int8], Int32, Int32, Int32) -> ExternalPointer[Fts5Context], ExternalPointer[Int8], Int32, ExternalPointer[Int8], Int32, OpaquePointer, Int32 -> Int32 # FieldDeclNode: This is a const param, but shouldn't be assigned as an alias since it doesn't have a value.
 
 
 @register_passable("trivial")
 struct Fts5Tokenizer(Copyable & Movable):
-    """CUSTOM TOKENIZERS.
-    Applications may also register custom tokenizer types. A tokenizer
-    is registered by providing fts5 with a populated instance of the
+    """Applications may also register custom tokenizer types.
+    
+    A tokenizer is registered by providing fts5 with a populated instance of the
     following structure. All structure methods must be defined, setting
     any member of the fts5_tokenizer struct to NULL leads to undefined
     behaviour. The structure methods are expected to function as follows:
@@ -499,52 +499,52 @@ struct fts5_tokenizer_v2(Copyable & Movable):
 
     var iVersion: Int32
     var xCreate: fn (
-        OpaquePointer, UnsafePointer[UnsafePointer[Int8]], Int32, UnsafePointer[UnsafePointer[Fts5Tokenizer]]
+        OpaquePointer, ExternalPointer[ExternalPointer[Int8]], Int32, ExternalPointer[ExternalPointer[Fts5Tokenizer]]
     ) -> Int32  # FieldDeclNode: This is a const param, but shouldn't be assigned as an alias since it doesn't have a value.
-    var xDelete: fn (UnsafePointer[Fts5Tokenizer]) -> NoneType
-    # var xTokenize: fn(OpaquePointer, Int32, UnsafePointer[Int8], Int32, Int32, Int32) -> (UnsafePointer[Fts5Tokenizer], OpaquePointer, Int32, UnsafePointer[Int8], Int32, UnsafePointer[Int8], Int32, Int32 -> Int32) # FieldDeclNode: This is a const param, but shouldn't be assigned as an alias since it doesn't have a value.
+    var xDelete: fn (ExternalPointer[Fts5Tokenizer]) -> NoneType
+    # var xTokenize: fn(OpaquePointer, Int32, ExternalPointer[Int8], Int32, Int32, Int32) -> (ExternalPointer[Fts5Tokenizer], OpaquePointer, Int32, ExternalPointer[Int8], Int32, ExternalPointer[Int8], Int32, Int32 -> Int32) # FieldDeclNode: This is a const param, but shouldn't be assigned as an alias since it doesn't have a value.
 
 
 @register_passable("trivial")
 struct fts5_tokenizer(Copyable & Movable):
     var xCreate: fn (
-        OpaquePointer, UnsafePointer[UnsafePointer[Int8]], Int32, UnsafePointer[UnsafePointer[Fts5Tokenizer]]
+        OpaquePointer, ExternalPointer[ExternalPointer[Int8]], Int32, ExternalPointer[ExternalPointer[Fts5Tokenizer]]
     ) -> Int32  # FieldDeclNode: This is a const param, but shouldn't be assigned as an alias since it doesn't have a value.
-    var xDelete: fn (UnsafePointer[Fts5Tokenizer]) -> NoneType
-    # var xTokenize: fn(OpaquePointer, Int32, UnsafePointer[Int8], Int32, Int32, Int32)) -> UnsafePointer[Fts5Tokenizer], OpaquePointer, Int32, UnsafePointer[Int8], Int32, Int32 -> Int32 # FieldDeclNode: This is a const param, but shouldn't be assigned as an alias since it doesn't have a value.
+    var xDelete: fn (ExternalPointer[Fts5Tokenizer]) -> NoneType
+    # var xTokenize: fn(OpaquePointer, Int32, ExternalPointer[Int8], Int32, Int32, Int32)) -> ExternalPointer[Fts5Tokenizer], OpaquePointer, Int32, ExternalPointer[Int8], Int32, Int32 -> Int32 # FieldDeclNode: This is a const param, but shouldn't be assigned as an alias since it doesn't have a value.
 
 
 @register_passable("trivial")
 struct fts5_api(Copyable & Movable):
-    """FTS5 EXTENSION REGISTRATION API"""
+    """FTS5 EXTENSION REGISTRATION API."""
 
     var iVersion: Int32
-    # var xCreateTokenizer: fn(void )) -> UnsafePointer[fts5_api], UnsafePointer[Int8], OpaquePointer, UnsafePointer[fts5_tokenizer], NoneType -> Int32 # FieldDeclNode: This is a const param, but shouldn't be assigned as an alias since it doesn't have a value.
+    # var xCreateTokenizer: fn(void )) -> ExternalPointer[fts5_api], ExternalPointer[Int8], OpaquePointer, ExternalPointer[fts5_tokenizer], NoneType -> Int32 # FieldDeclNode: This is a const param, but shouldn't be assigned as an alias since it doesn't have a value.
     var xFindTokenizer: fn (
-        UnsafePointer[fts5_api], UnsafePointer[Int8], UnsafePointer[OpaquePointer], UnsafePointer[fts5_tokenizer]
+        ExternalPointer[fts5_api], ExternalPointer[Int8], ExternalPointer[OpaquePointer], ExternalPointer[fts5_tokenizer]
     ) -> Int32  # FieldDeclNode: This is a const param, but shouldn't be assigned as an alias since it doesn't have a value.
-    # var xCreateFunction: fn(void )) -> UnsafePointer[fts5_api], UnsafePointer[Int8], OpaquePointer, fts5_extension_function, NoneType -> Int32 # FieldDeclNode: This is a const param, but shouldn't be assigned as an alias since it doesn't have a value.
-    # var xCreateTokenizer_v2: fn(void )) -> UnsafePointer[fts5_api], UnsafePointer[Int8], OpaquePointer, UnsafePointer[fts5_tokenizer_v2], NoneType -> Int32 # FieldDeclNode: This is a const param, but shouldn't be assigned as an alias since it doesn't have a value.
+    # var xCreateFunction: fn(void )) -> ExternalPointer[fts5_api], ExternalPointer[Int8], OpaquePointer, fts5_extension_function, NoneType -> Int32 # FieldDeclNode: This is a const param, but shouldn't be assigned as an alias since it doesn't have a value.
+    # var xCreateTokenizer_v2: fn(void )) -> ExternalPointer[fts5_api], ExternalPointer[Int8], OpaquePointer, ExternalPointer[fts5_tokenizer_v2], NoneType -> Int32 # FieldDeclNode: This is a const param, but shouldn't be assigned as an alias since it doesn't have a value.
     var xFindTokenizer_v2: fn (
-        UnsafePointer[fts5_api],
-        UnsafePointer[Int8],
-        UnsafePointer[OpaquePointer],
-        UnsafePointer[UnsafePointer[fts5_tokenizer_v2]],
+        ExternalPointer[fts5_api],
+        ExternalPointer[Int8],
+        ExternalPointer[OpaquePointer],
+        ExternalPointer[ExternalPointer[fts5_tokenizer_v2]],
     ) -> Int32  # FieldDeclNode: This is a const param, but shouldn't be assigned as an alias since it doesn't have a value.
 
 
-# alias fts5_extension_function = fn(UnsafePointer[Fts5ExtensionApi],UnsafePointer[],UnsafePointer[],Int32,UnsafePointer[UnsafePointer[]]) -> NoneType
+# alias fts5_extension_function = fn(ExternalPointer[Fts5ExtensionApi],ExternalPointer[],ExternalPointer[],Int32,ExternalPointer[ExternalPointer[]]) -> NoneType
 
 
 @register_passable("trivial")
 struct sqlite3_rtree_query_info(Copyable & Movable):
     var pContext: OpaquePointer
     var nParam: Int32
-    var aParam: UnsafePointer[sqlite3_rtree_dbl]
+    var aParam: ExternalPointer[sqlite3_rtree_dbl]
     var pUser: OpaquePointer
     var xDelUser: fn (OpaquePointer) -> NoneType
-    var aCoord: UnsafePointer[sqlite3_rtree_dbl]
-    var anQueue: UnsafePointer[UInt32]
+    var aCoord: ExternalPointer[sqlite3_rtree_dbl]
+    var anQueue: ExternalPointer[UInt32]
     var nCoord: Int32
     var iLevel: Int32
     var mxLevel: Int32
@@ -553,7 +553,7 @@ struct sqlite3_rtree_query_info(Copyable & Movable):
     var eParentWithin: Int32
     var eWithin: Int32
     var rScore: sqlite3_rtree_dbl
-    var apSqlParam: UnsafePointer[UnsafePointer[sqlite3_value]]
+    var apSqlParam: ExternalPointer[ExternalPointer[sqlite3_value]]
 
 
 @register_passable("trivial")
@@ -565,7 +565,7 @@ struct Fts5Context(Copyable & Movable):
 struct sqlite3_rtree_geometry(Copyable & Movable):
     var pContext: OpaquePointer
     var nParam: Int32
-    var aParam: UnsafePointer[sqlite3_rtree_dbl]
+    var aParam: ExternalPointer[sqlite3_rtree_dbl]
     var pUser: OpaquePointer
     var xDelUser: fn (OpaquePointer) -> NoneType
 
@@ -583,14 +583,14 @@ struct sqlite3_pcache_methods(Copyable & Movable):
     var pArg: OpaquePointer
     var xInit: fn (OpaquePointer) -> Int32
     var xShutdown: fn (OpaquePointer) -> NoneType
-    var xCreate: fn (Int32, Int32) -> UnsafePointer[sqlite3_pcache]
-    var xCachesize: fn (UnsafePointer[sqlite3_pcache], Int32) -> NoneType
-    var xPagecount: fn (UnsafePointer[sqlite3_pcache]) -> Int32
-    var xFetch: fn (UnsafePointer[sqlite3_pcache], UInt32, Int32) -> OpaquePointer
-    var xUnpin: fn (UnsafePointer[sqlite3_pcache], OpaquePointer, Int32) -> NoneType
-    var xRekey: fn (UnsafePointer[sqlite3_pcache], OpaquePointer, UInt32, UInt32) -> NoneType
-    var xTruncate: fn (UnsafePointer[sqlite3_pcache], UInt32) -> NoneType
-    var xDestroy: fn (UnsafePointer[sqlite3_pcache]) -> NoneType
+    var xCreate: fn (Int32, Int32) -> ExternalPointer[sqlite3_pcache]
+    var xCachesize: fn (ExternalPointer[sqlite3_pcache], Int32) -> NoneType
+    var xPagecount: fn (ExternalPointer[sqlite3_pcache]) -> Int32
+    var xFetch: fn (ExternalPointer[sqlite3_pcache], UInt32, Int32) -> OpaquePointer
+    var xUnpin: fn (ExternalPointer[sqlite3_pcache], OpaquePointer, Int32) -> NoneType
+    var xRekey: fn (ExternalPointer[sqlite3_pcache], OpaquePointer, UInt32, UInt32) -> NoneType
+    var xTruncate: fn (ExternalPointer[sqlite3_pcache], UInt32) -> NoneType
+    var xDestroy: fn (ExternalPointer[sqlite3_pcache]) -> NoneType
 
 
 @register_passable("trivial")
@@ -707,13 +707,13 @@ struct sqlite3_mutex_methods(Copyable & Movable):
 
     var xMutexInit: fn () -> Int32
     var xMutexEnd: fn () -> Int32
-    var xMutexAlloc: fn (Int32) -> UnsafePointer[sqlite3_mutex]
-    var xMutexFree: fn (UnsafePointer[sqlite3_mutex]) -> NoneType
-    var xMutexEnter: fn (UnsafePointer[sqlite3_mutex]) -> NoneType
-    var xMutexTry: fn (UnsafePointer[sqlite3_mutex]) -> Int32
-    var xMutexLeave: fn (UnsafePointer[sqlite3_mutex]) -> NoneType
-    var xMutexHeld: fn (UnsafePointer[sqlite3_mutex]) -> Int32
-    var xMutexNotheld: fn (UnsafePointer[sqlite3_mutex]) -> Int32
+    var xMutexAlloc: fn (Int32) -> ExternalPointer[sqlite3_mutex]
+    var xMutexFree: fn (ExternalPointer[sqlite3_mutex]) -> NoneType
+    var xMutexEnter: fn (ExternalPointer[sqlite3_mutex]) -> NoneType
+    var xMutexTry: fn (ExternalPointer[sqlite3_mutex]) -> Int32
+    var xMutexLeave: fn (ExternalPointer[sqlite3_mutex]) -> NoneType
+    var xMutexHeld: fn (ExternalPointer[sqlite3_mutex]) -> Int32
+    var xMutexNotheld: fn (ExternalPointer[sqlite3_mutex]) -> Int32
 
 
 @register_passable("trivial")
@@ -938,20 +938,21 @@ struct sqlite3_pcache_methods2(Copyable & Movable):
     var pArg: OpaquePointer
     var xInit: fn (OpaquePointer) -> Int32
     var xShutdown: fn (OpaquePointer) -> NoneType
-    var xCreate: fn (Int32, Int32, Int32) -> UnsafePointer[sqlite3_pcache]
-    var xCachesize: fn (UnsafePointer[sqlite3_pcache], Int32) -> NoneType
-    var xPagecount: fn (UnsafePointer[sqlite3_pcache]) -> Int32
-    var xFetch: fn (UnsafePointer[sqlite3_pcache], UInt32, Int32) -> UnsafePointer[sqlite3_pcache_page]
-    var xUnpin: fn (UnsafePointer[sqlite3_pcache], UnsafePointer[sqlite3_pcache_page], Int32) -> NoneType
-    var xRekey: fn (UnsafePointer[sqlite3_pcache], UnsafePointer[sqlite3_pcache_page], UInt32, UInt32) -> NoneType
-    var xTruncate: fn (UnsafePointer[sqlite3_pcache], UInt32) -> NoneType
-    var xDestroy: fn (UnsafePointer[sqlite3_pcache]) -> NoneType
-    var xShrink: fn (UnsafePointer[sqlite3_pcache]) -> NoneType
+    var xCreate: fn (Int32, Int32, Int32) -> ExternalPointer[sqlite3_pcache]
+    var xCachesize: fn (ExternalPointer[sqlite3_pcache], Int32) -> NoneType
+    var xPagecount: fn (ExternalPointer[sqlite3_pcache]) -> Int32
+    var xFetch: fn (ExternalPointer[sqlite3_pcache], UInt32, Int32) -> ExternalPointer[sqlite3_pcache_page]
+    var xUnpin: fn (ExternalPointer[sqlite3_pcache], ExternalPointer[sqlite3_pcache_page], Int32) -> NoneType
+    var xRekey: fn (ExternalPointer[sqlite3_pcache], ExternalPointer[sqlite3_pcache_page], UInt32, UInt32) -> NoneType
+    var xTruncate: fn (ExternalPointer[sqlite3_pcache], UInt32) -> NoneType
+    var xDestroy: fn (ExternalPointer[sqlite3_pcache]) -> NoneType
+    var xShrink: fn (ExternalPointer[sqlite3_pcache]) -> NoneType
 
 
 @register_passable("trivial")
 struct sqlite3_io_methods(Copyable & Movable):
     """OS Interface File Virtual Methods Object.
+
     Every file opened by the [sqlite3_vfs.xOpen] method populates an
     [sqlite3_file] object (or, more commonly, a subclass of the
     [sqlite3_file] object) with a pointer to an instance of this object.
@@ -1042,26 +1043,26 @@ struct sqlite3_io_methods(Copyable & Movable):
     database corruption."""
 
     var iVersion: Int32
-    var xClose: fn (UnsafePointer[sqlite3_file]) -> Int32
-    var xRead: fn (UnsafePointer[sqlite3_file], OpaquePointer, Int32, sqlite3_int64) -> Int32
+    var xClose: fn (ExternalPointer[sqlite3_file]) -> Int32
+    var xRead: fn (ExternalPointer[sqlite3_file], OpaquePointer, Int32, sqlite3_int64) -> Int32
     var xWrite: fn (
-        UnsafePointer[sqlite3_file], OpaquePointer, Int32, sqlite3_int64
+        ExternalPointer[sqlite3_file], OpaquePointer, Int32, sqlite3_int64
     ) -> Int32  # FieldDeclNode: This is a const param, but shouldn't be assigned as an alias since it doesn't have a value.
-    var xTruncate: fn (UnsafePointer[sqlite3_file], sqlite3_int64) -> Int32
-    var xSync: fn (UnsafePointer[sqlite3_file], Int32) -> Int32
-    var xFileSize: fn (UnsafePointer[sqlite3_file], UnsafePointer[sqlite3_int64]) -> Int32
-    var xLock: fn (UnsafePointer[sqlite3_file], Int32) -> Int32
-    var xUnlock: fn (UnsafePointer[sqlite3_file], Int32) -> Int32
-    var xCheckReservedLock: fn (UnsafePointer[sqlite3_file], UnsafePointer[Int32]) -> Int32
-    var xFileControl: fn (UnsafePointer[sqlite3_file], Int32, OpaquePointer) -> Int32
-    var xSectorSize: fn (UnsafePointer[sqlite3_file]) -> Int32
-    var xDeviceCharacteristics: fn (UnsafePointer[sqlite3_file]) -> Int32
-    var xShmMap: fn (UnsafePointer[sqlite3_file], Int32, Int32, Int32, UnsafePointer[OpaquePointer]) -> Int32
-    var xShmLock: fn (UnsafePointer[sqlite3_file], Int32, Int32, Int32) -> Int32
-    var xShmBarrier: fn (UnsafePointer[sqlite3_file]) -> NoneType
-    var xShmUnmap: fn (UnsafePointer[sqlite3_file], Int32) -> Int32
-    var xFetch: fn (UnsafePointer[sqlite3_file], sqlite3_int64, Int32, UnsafePointer[OpaquePointer]) -> Int32
-    var xUnfetch: fn (UnsafePointer[sqlite3_file], sqlite3_int64, OpaquePointer) -> Int32
+    var xTruncate: fn (ExternalPointer[sqlite3_file], sqlite3_int64) -> Int32
+    var xSync: fn (ExternalPointer[sqlite3_file], Int32) -> Int32
+    var xFileSize: fn (ExternalPointer[sqlite3_file], ExternalPointer[sqlite3_int64]) -> Int32
+    var xLock: fn (ExternalPointer[sqlite3_file], Int32) -> Int32
+    var xUnlock: fn (ExternalPointer[sqlite3_file], Int32) -> Int32
+    var xCheckReservedLock: fn (ExternalPointer[sqlite3_file], ExternalPointer[Int32]) -> Int32
+    var xFileControl: fn (ExternalPointer[sqlite3_file], Int32, OpaquePointer) -> Int32
+    var xSectorSize: fn (ExternalPointer[sqlite3_file]) -> Int32
+    var xDeviceCharacteristics: fn (ExternalPointer[sqlite3_file]) -> Int32
+    var xShmMap: fn (ExternalPointer[sqlite3_file], Int32, Int32, Int32, ExternalPointer[OpaquePointer]) -> Int32
+    var xShmLock: fn (ExternalPointer[sqlite3_file], Int32, Int32, Int32) -> Int32
+    var xShmBarrier: fn (ExternalPointer[sqlite3_file]) -> NoneType
+    var xShmUnmap: fn (ExternalPointer[sqlite3_file], Int32) -> Int32
+    var xFetch: fn (ExternalPointer[sqlite3_file], sqlite3_int64, Int32, ExternalPointer[OpaquePointer]) -> Int32
+    var xUnfetch: fn (ExternalPointer[sqlite3_file], sqlite3_int64, OpaquePointer) -> Int32
 
 
 @register_passable("trivial")
@@ -1078,6 +1079,7 @@ struct sqlite3_api_routines(Copyable & Movable):
 @register_passable("trivial")
 struct sqlite3_vfs(Copyable & Movable):
     """OS Interface Object.
+
     An instance of the sqlite3_vfs object defines the interface between
     the SQLite core and the underlying operating system.  The "vfs"
     in the name of the object stands for "virtual file system".  See
@@ -1228,41 +1230,41 @@ struct sqlite3_vfs(Copyable & Movable):
     var iVersion: Int32
     var szOsFile: Int32
     var mxPathname: Int32
-    var pNext: UnsafePointer[sqlite3_vfs]
-    var zName: UnsafePointer[
+    var pNext: ExternalPointer[sqlite3_vfs]
+    var zName: ExternalPointer[
         Int8
     ]  # FieldDeclNode: This is a const param, but shouldn't be assigned as an alias since it doesn't have a value.
     var pAppData: OpaquePointer
     var xOpen: fn (
-        UnsafePointer[sqlite3_vfs], sqlite3_filename, UnsafePointer[sqlite3_file], Int32, UnsafePointer[Int32]
+        ExternalPointer[sqlite3_vfs], sqlite3_filename, ExternalPointer[sqlite3_file], Int32, ExternalPointer[Int32]
     ) -> Int32
     var xDelete: fn (
-        UnsafePointer[sqlite3_vfs], UnsafePointer[Int8], Int32
+        ExternalPointer[sqlite3_vfs], ExternalPointer[Int8], Int32
     ) -> Int32  # FieldDeclNode: This is a const param, but shouldn't be assigned as an alias since it doesn't have a value.
     var xAccess: fn (
-        UnsafePointer[sqlite3_vfs], UnsafePointer[Int8], Int32, UnsafePointer[Int32]
+        ExternalPointer[sqlite3_vfs], ExternalPointer[Int8], Int32, ExternalPointer[Int32]
     ) -> Int32  # FieldDeclNode: This is a const param, but shouldn't be assigned as an alias since it doesn't have a value.
     var xFullPathname: fn (
-        UnsafePointer[sqlite3_vfs], UnsafePointer[Int8], Int32, UnsafePointer[Int8]
+        ExternalPointer[sqlite3_vfs], ExternalPointer[Int8], Int32, ExternalPointer[Int8]
     ) -> Int32  # FieldDeclNode: This is a const param, but shouldn't be assigned as an alias since it doesn't have a value.
     var xDlOpen: fn (
-        UnsafePointer[sqlite3_vfs], UnsafePointer[Int8]
+        ExternalPointer[sqlite3_vfs], ExternalPointer[Int8]
     ) -> OpaquePointer  # FieldDeclNode: This is a const param, but shouldn't be assigned as an alias since it doesn't have a value.
-    var xDlError: fn (UnsafePointer[sqlite3_vfs], Int32, UnsafePointer[Int8]) -> NoneType
-    # var xDlSym: fn(UnsafePointer[sqlite3_vfs], OpaquePointer, char ))(void) -> UnsafePointer[void (] # FieldDeclNode: This is a const param, but shouldn't be assigned as an alias since it doesn't have a value.
-    var xDlClose: fn (UnsafePointer[sqlite3_vfs], OpaquePointer) -> NoneType
-    var xRandomness: fn (UnsafePointer[sqlite3_vfs], Int32, UnsafePointer[Int8]) -> Int32
-    var xSleep: fn (UnsafePointer[sqlite3_vfs], Int32) -> Int32
-    var xCurrentTime: fn (UnsafePointer[sqlite3_vfs], UnsafePointer[Float64]) -> Int32
-    var xGetLastError: fn (UnsafePointer[sqlite3_vfs], Int32, UnsafePointer[Int8]) -> Int32
-    var xCurrentTimeInt64: fn (UnsafePointer[sqlite3_vfs], UnsafePointer[sqlite3_int64]) -> Int32
+    var xDlError: fn (ExternalPointer[sqlite3_vfs], Int32, ExternalPointer[Int8]) -> NoneType
+    # var xDlSym: fn(ExternalPointer[sqlite3_vfs], OpaquePointer, char ))(void) -> ExternalPointer[void (] # FieldDeclNode: This is a const param, but shouldn't be assigned as an alias since it doesn't have a value.
+    var xDlClose: fn (ExternalPointer[sqlite3_vfs], OpaquePointer) -> NoneType
+    var xRandomness: fn (ExternalPointer[sqlite3_vfs], Int32, ExternalPointer[Int8]) -> Int32
+    var xSleep: fn (ExternalPointer[sqlite3_vfs], Int32) -> Int32
+    var xCurrentTime: fn (ExternalPointer[sqlite3_vfs], ExternalPointer[Float64]) -> Int32
+    var xGetLastError: fn (ExternalPointer[sqlite3_vfs], Int32, ExternalPointer[Int8]) -> Int32
+    var xCurrentTimeInt64: fn (ExternalPointer[sqlite3_vfs], ExternalPointer[sqlite3_int64]) -> Int32
     var xSetSystemCall: fn (
-        UnsafePointer[sqlite3_vfs], UnsafePointer[Int8], sqlite3_syscall_ptr
+        ExternalPointer[sqlite3_vfs], ExternalPointer[Int8], sqlite3_syscall_ptr
     ) -> Int32  # FieldDeclNode: This is a const param, but shouldn't be assigned as an alias since it doesn't have a value.
     var xGetSystemCall: fn (
-        UnsafePointer[sqlite3_vfs], UnsafePointer[Int8]
+        ExternalPointer[sqlite3_vfs], ExternalPointer[Int8]
     ) -> sqlite3_syscall_ptr  # FieldDeclNode: This is a const param, but shouldn't be assigned as an alias since it doesn't have a value.
-    var xNextSystemCall: fn (UnsafePointer[sqlite3_vfs], UnsafePointer[Int8]) -> UnsafePointer[
+    var xNextSystemCall: fn (ExternalPointer[sqlite3_vfs], ExternalPointer[Int8]) -> ExternalPointer[
         Int8
     ]  # FieldDeclNode: This is a const param, but shouldn't be assigned as an alias since it doesn't have a value.
 
@@ -1335,6 +1337,7 @@ struct sqlite3_mem_methods(Copyable & Movable):
 @register_passable("trivial")
 struct sqlite3_stmt(Copyable & Movable):
     """Prepared Statement Object.
+
     An instance of this object represents a single SQL statement that
     has been compiled into binary form and is ready to be evaluated.
     Think of each SQL statement as a separate computer program.  The
@@ -1504,62 +1507,62 @@ or else the use of the [data_store_directory pragma] should be avoided."""
 struct sqlite3_module(Copyable & Movable):
     var iVersion: Int32
     var xCreate: fn (
-        UnsafePointer[sqlite3_connection],
+        ExternalPointer[sqlite3_connection],
         OpaquePointer,
         Int32,
-        UnsafePointer[UnsafePointer[Int8]],
-        UnsafePointer[UnsafePointer[sqlite3_vtab]],
-        UnsafePointer[UnsafePointer[Int8]],
+        ExternalPointer[ExternalPointer[Int8]],
+        ExternalPointer[ExternalPointer[sqlite3_vtab]],
+        ExternalPointer[ExternalPointer[Int8]],
     ) -> Int32  # FieldDeclNode: This is a const param, but shouldn't be assigned as an alias since it doesn't have a value.
     var xConnect: fn (
-        UnsafePointer[sqlite3_connection],
+        ExternalPointer[sqlite3_connection],
         OpaquePointer,
         Int32,
-        UnsafePointer[UnsafePointer[Int8]],
-        UnsafePointer[UnsafePointer[sqlite3_vtab]],
-        UnsafePointer[UnsafePointer[Int8]],
+        ExternalPointer[ExternalPointer[Int8]],
+        ExternalPointer[ExternalPointer[sqlite3_vtab]],
+        ExternalPointer[ExternalPointer[Int8]],
     ) -> Int32  # FieldDeclNode: This is a const param, but shouldn't be assigned as an alias since it doesn't have a value.
-    var xBestIndex: fn (UnsafePointer[sqlite3_vtab], UnsafePointer[sqlite3_index_info]) -> Int32
-    var xDisconnect: fn (UnsafePointer[sqlite3_vtab]) -> Int32
-    var xDestroy: fn (UnsafePointer[sqlite3_vtab]) -> Int32
-    var xOpen: fn (UnsafePointer[sqlite3_vtab], UnsafePointer[UnsafePointer[sqlite3_vtab_cursor]]) -> Int32
-    var xClose: fn (UnsafePointer[sqlite3_vtab_cursor]) -> Int32
+    var xBestIndex: fn (ExternalPointer[sqlite3_vtab], ExternalPointer[sqlite3_index_info]) -> Int32
+    var xDisconnect: fn (ExternalPointer[sqlite3_vtab]) -> Int32
+    var xDestroy: fn (ExternalPointer[sqlite3_vtab]) -> Int32
+    var xOpen: fn (ExternalPointer[sqlite3_vtab], ExternalPointer[ExternalPointer[sqlite3_vtab_cursor]]) -> Int32
+    var xClose: fn (ExternalPointer[sqlite3_vtab_cursor]) -> Int32
     var xFilter: fn (
-        UnsafePointer[sqlite3_vtab_cursor],
+        ExternalPointer[sqlite3_vtab_cursor],
         Int32,
-        UnsafePointer[Int8],
+        ExternalPointer[Int8],
         Int32,
-        UnsafePointer[UnsafePointer[sqlite3_value]],
+        ExternalPointer[ExternalPointer[sqlite3_value]],
     ) -> Int32  # FieldDeclNode: This is a const param, but shouldn't be assigned as an alias since it doesn't have a value.
-    var xNext: fn (UnsafePointer[sqlite3_vtab_cursor]) -> Int32
-    var xEof: fn (UnsafePointer[sqlite3_vtab_cursor]) -> Int32
-    var xColumn: fn (UnsafePointer[sqlite3_vtab_cursor], UnsafePointer[sqlite3_context], Int32) -> Int32
-    var xRowid: fn (UnsafePointer[sqlite3_vtab_cursor], UnsafePointer[sqlite3_int64]) -> Int32
+    var xNext: fn (ExternalPointer[sqlite3_vtab_cursor]) -> Int32
+    var xEof: fn (ExternalPointer[sqlite3_vtab_cursor]) -> Int32
+    var xColumn: fn (ExternalPointer[sqlite3_vtab_cursor], ExternalPointer[sqlite3_context], Int32) -> Int32
+    var xRowid: fn (ExternalPointer[sqlite3_vtab_cursor], ExternalPointer[sqlite3_int64]) -> Int32
     var xUpdate: fn (
-        UnsafePointer[sqlite3_vtab], Int32, UnsafePointer[UnsafePointer[sqlite3_value]], UnsafePointer[sqlite3_int64]
+        ExternalPointer[sqlite3_vtab], Int32, ExternalPointer[ExternalPointer[sqlite3_value]], ExternalPointer[sqlite3_int64]
     ) -> Int32
-    var xBegin: fn (UnsafePointer[sqlite3_vtab]) -> Int32
-    var xSync: fn (UnsafePointer[sqlite3_vtab]) -> Int32
-    var xCommit: fn (UnsafePointer[sqlite3_vtab]) -> Int32
-    var xRollback: fn (UnsafePointer[sqlite3_vtab]) -> Int32
+    var xBegin: fn (ExternalPointer[sqlite3_vtab]) -> Int32
+    var xSync: fn (ExternalPointer[sqlite3_vtab]) -> Int32
+    var xCommit: fn (ExternalPointer[sqlite3_vtab]) -> Int32
+    var xRollback: fn (ExternalPointer[sqlite3_vtab]) -> Int32
     var xFindFunction: fn (
-        UnsafePointer[sqlite3_vtab],
+        ExternalPointer[sqlite3_vtab],
         Int32,
-        UnsafePointer[Int8, mut=False],
+        ExternalImmutPointer[Int8],
         fn (
-            UnsafePointer[sqlite3_context], Int32, UnsafePointer[UnsafePointer[sqlite3_value]]
-        ) -> UnsafePointer[OpaquePointer],
-        UnsafePointer[OpaquePointer],
+            ExternalPointer[sqlite3_context], Int32, ExternalPointer[ExternalPointer[sqlite3_value]]
+        ) -> ExternalPointer[OpaquePointer],
+        ExternalPointer[OpaquePointer],
     ) -> Int32  # FieldDeclNode: This is a const param, but shouldn't be assigned as an alias since it doesn't have a value.
     var xRename: fn (
-        UnsafePointer[sqlite3_vtab], UnsafePointer[Int8]
+        ExternalPointer[sqlite3_vtab], ExternalPointer[Int8]
     ) -> Int32  # FieldDeclNode: This is a const param, but shouldn't be assigned as an alias since it doesn't have a value.
-    var xSavepoint: fn (UnsafePointer[sqlite3_vtab], Int32) -> Int32
-    var xRelease: fn (UnsafePointer[sqlite3_vtab], Int32) -> Int32
-    var xRollbackTo: fn (UnsafePointer[sqlite3_vtab], Int32) -> Int32
-    var xShadowName: fn (UnsafePointer[Int8, mut=False]) -> Int32
+    var xSavepoint: fn (ExternalPointer[sqlite3_vtab], Int32) -> Int32
+    var xRelease: fn (ExternalPointer[sqlite3_vtab], Int32) -> Int32
+    var xRollbackTo: fn (ExternalPointer[sqlite3_vtab], Int32) -> Int32
+    var xShadowName: fn (ExternalImmutPointer[Int8]) -> Int32
     var xIntegrity: fn (
-        UnsafePointer[sqlite3_vtab], UnsafePointer[Int8], UnsafePointer[Int8], Int32, UnsafePointer[UnsafePointer[Int8]]
+        ExternalPointer[sqlite3_vtab], ExternalPointer[Int8], ExternalPointer[Int8], Int32, ExternalPointer[ExternalPointer[Int8]]
     ) -> Int32  # FieldDeclNode: This is a const param, but shouldn't be assigned as an alias since it doesn't have a value.
 
 
@@ -1586,12 +1589,12 @@ struct _sqlite3_index_info_sqlite3_index_constraint(Copyable & Movable):
 @register_passable("trivial")
 struct sqlite3_index_info(Copyable & Movable):
     var nConstraint: Int32
-    var aConstraint: UnsafePointer[_sqlite3_index_info_sqlite3_index_constraint]
+    var aConstraint: ExternalPointer[_sqlite3_index_info_sqlite3_index_constraint]
     var nOrderBy: Int32
-    var aOrderBy: UnsafePointer[_sqlite3_index_info_sqlite3_index_orderby]
-    var aConstraintUsage: UnsafePointer[_sqlite3_index_info_sqlite3_index_constraint_usage]
+    var aOrderBy: ExternalPointer[_sqlite3_index_info_sqlite3_index_orderby]
+    var aConstraintUsage: ExternalPointer[_sqlite3_index_info_sqlite3_index_constraint_usage]
     var idxNum: Int32
-    var idxStr: UnsafePointer[Int8]
+    var idxStr: ExternalPointer[Int8]
     var needToFreeIdxStr: Int32
     var orderByConsumed: Int32
     var estimatedCost: Float64
@@ -1604,16 +1607,16 @@ struct sqlite3_index_info(Copyable & Movable):
 struct sqlite3_vtab(Copyable & Movable):
     """Structures used by the virtual table interface."""
 
-    var pModule: UnsafePointer[
+    var pModule: ExternalPointer[
         sqlite3_module
     ]  # FieldDeclNode: This is a const param, but shouldn't be assigned as an alias since it doesn't have a value.
     var nRef: Int32
-    var zErrMsg: UnsafePointer[Int8]
+    var zErrMsg: ExternalPointer[Int8]
 
 
 @register_passable("trivial")
 struct sqlite3_vtab_cursor(Copyable & Movable):
-    var pVtab: UnsafePointer[sqlite3_vtab]
+    var pVtab: ExternalPointer[sqlite3_vtab]
 
 
 @register_passable("trivial")
