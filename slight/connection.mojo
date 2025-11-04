@@ -110,6 +110,13 @@ struct Connection(Movable):
         """
         self.db = other^.take_connection()
         other = Connection()
+    
+    fn __del__(deinit self):
+        """Closes the connection when it is deleted."""
+        if self.db:
+            _ = self^.close()
+            # Remove this line when I can call deinit explicitly
+            self = Connection()
 
     fn take_connection(var self) -> InnerConnection:
         """Consume the connection and return the inner connection.

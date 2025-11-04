@@ -43,24 +43,17 @@ fn test_eq_ignore_ascii_case_test() raises:
 
 fn test_path() raises:
     var db = Connection.open_in_memory()
-    try:
-        assert_equal(db.path().value(), "")
-    finally:
-        db^.close()
+    assert_equal(db.path().value(), "")
+
 
     db = Connection.open("file:dummy.db?mode=memory&cache=shared")
-    try:
-        assert_equal(db.path().value(), "")
-    finally:
-        db^.close()
+    assert_equal(db.path().value(), "")
 
     with tempfile.TemporaryDirectory() as tmp:
         var path = Path(tmp) / "file.db"
         var db = Connection.open(path)
-        try:
-            assert_true(String(db.path().value()).endswith("file.db"))
-        finally:
-            db^.close()
+        assert_true(String(db.path().value()).endswith("file.db"))
+
 
 
 fn test_open_failure() raises:
@@ -124,25 +117,17 @@ fn test_table_creation_and_insertion() raises:
     );
     """
 
-    try:
-        _ = db.execute(create_table)
-    except e:
-        db^.close()
-        raise
+    db.execute_batch(create_table)
     
     alias create_tables = """
     CREATE TABLE EMPLOYEE(ID INT PRIMARY KEY NOT NULL);
     CREATE TABLE DEPARTMENT(ID INT PRIMARY KEY NOT NULL);
     """
 
-    try:
-        db.execute_batch(create_tables)
-        alias check_exists = "SELECT name FROM sqlite_master WHERE type='table' AND name = 'DEPARTMENT';"
-        var stmt = db.prepare(check_exists)
-        assert_true(stmt.exists())
-    except e:
-        db^.close()
-        raise
+    db.execute_batch(create_tables)
+    alias check_exists = "SELECT name FROM sqlite_master WHERE type='table' AND name = 'DEPARTMENT';"
+    var stmt = db.prepare(check_exists)
+    assert_true(stmt.exists())
 
     # Running multiple inserts in one query doesn't work atm. Will need to fix
     alias insert_values = """
@@ -154,34 +139,23 @@ fn test_table_creation_and_insertion() raises:
         assert_equal(String(db.execute(insert_values), " row(s) affected."), "2 row(s) affected.")
     except e:
         if e.as_string_slice() == "not an error":
-            db^.close()
             raise
-        db^.close()
-        raise
 
     alias select_user_query = "SELECT * FROM COMPANY WHERE NAME = ?;"
-    try:
-        var stmt = db.prepare(select_user_query)
-        for row in stmt.query(["Alice"]):
-            # Column name based access
-            assert_equal(row.get[Int]("id"), 2)
-            assert_equal(row.get[String]("name"), "Alice")
+    stmt = db.prepare(select_user_query)
+    for row in stmt.query(["Alice"]):
+        # Column name based access
+        assert_equal(row.get[Int]("id"), 2)
+        assert_equal(row.get[String]("name"), "Alice")
 
-            # Index based access
-            assert_equal(row.get[Int](0), 2)
-            assert_equal(row.get[String](1), "Alice")
-    except e:
-        db^.close()
-        raise
+        # Index based access
+        assert_equal(row.get[Int](0), 2)
+        assert_equal(row.get[String](1), "Alice")
 
-    try:
-        var stmt = db.prepare(select_user_query)
-        var employee = stmt.query_row[transform=transform_row](["Bob"])
-        assert_equal(employee.id, 1)
-        assert_equal(employee.name, "Bob")
-    except e:
-        db^.close()
-        raise
+    stmt = db.prepare(select_user_query)
+    var employee = stmt.query_row[transform=transform_row](["Bob"])
+    assert_equal(employee.id, 1)
+    assert_equal(employee.name, "Bob")
 
     db^.close()
 
@@ -206,16 +180,13 @@ fn test_execute_batch() raises:
     INSERT INTO foo VALUES(3);
     INSERT INTO foo VALUES(4);"""
     
-    try:
-        db.execute_batch(sql)
-        db.execute_batch("UPDATE foo SET x = 3 WHERE x < 3")
-        
-        with assert_raises():
-            db.execute_batch("INVALID SQL")
-        
-        # db.execute_batch("PRAGMA locking_mode = EXCLUSIVE")
-    finally:
-        db^.close()
+    db.execute_batch(sql)
+    db.execute_batch("UPDATE foo SET x = 3 WHERE x < 3")
+    
+    with assert_raises():
+        db.execute_batch("INVALID SQL")
+    
+    # db.execute_batch("PRAGMA locking_mode = EXCLUSIVE")
 
 
 fn test_execute() raises:
@@ -224,113 +195,101 @@ fn test_execute() raises:
     fn get_int(r: Row) raises -> Int:
         return r.get[Int](0)
     
-    try:
-        db.execute_batch("CREATE TABLE foo(x INTEGER)")
-        
-        assert_equal(db.execute("INSERT INTO foo(x) VALUES (?1)", [1]), 1)
-        assert_equal(db.execute("INSERT INTO foo(x) VALUES (?1)", [2]), 1)
-        
-        assert_equal(db.query_row[transform=get_int]("SELECT SUM(x) FROM foo"), 3)
-    finally:
-        db^.close()
+    db.execute_batch("CREATE TABLE foo(x INTEGER)")
+    
+    assert_equal(db.execute("INSERT INTO foo(x) VALUES (?1)", [1]), 1)
+    assert_equal(db.execute("INSERT INTO foo(x) VALUES (?1)", [2]), 1)
+    
+    assert_equal(db.query_row[transform=get_int]("SELECT SUM(x) FROM foo"), 3)
+
 
 
 fn test_execute_select_with_row() raises:
     var db = Connection.open_in_memory()
-    try:
-        with assert_raises(contains="Query returned rows"):
-            _ = db.execute("SELECT 1")
-    finally:
-        db^.close()
+    with assert_raises(contains="Query returned rows"):
+        _ = db.execute("SELECT 1")
+
 
 
 fn test_execute_multiple() raises:
     var db = Connection.open_in_memory()
-    try:
-        with assert_raises(contains="MultipleStatementsError"):
-            _ = db.execute("CREATE TABLE foo(x INTEGER); CREATE TABLE foo(x INTEGER)")
-        
-        # Tail comment should be ignored
-        _ = db.execute("CREATE TABLE t(c); -- bim")
-    finally:
-        db^.close()
+    with assert_raises(contains="MultipleStatementsError"):
+        _ = db.execute("CREATE TABLE foo(x INTEGER); CREATE TABLE foo(x INTEGER)")
+    
+    # Tail comment should be ignored
+    _ = db.execute("CREATE TABLE t(c); -- bim")
+
 
 
 fn test_prepare_column_names() raises:
     var db = Connection.open_in_memory()
-    try:
-        db.execute_batch("CREATE TABLE foo(x INTEGER);")
-        
-        var stmt = db.prepare("SELECT * FROM foo")
-        assert_equal(stmt.column_count(), 1)
-        # TODO: column_names() method not yet implemented
-        # assert_equal(stmt.column_names()[0], "x")
-        
-        var stmt2 = db.prepare("SELECT x AS a, x AS b FROM foo")
-        assert_equal(stmt2.column_count(), 2)
-        # assert_equal(stmt2.column_names()[0], "a")
-        # assert_equal(stmt2.column_names()[1], "b")
-    finally:
-        db^.close()
+    db.execute_batch("CREATE TABLE foo(x INTEGER);")
+    
+    var stmt = db.prepare("SELECT * FROM foo")
+    assert_equal(stmt.column_count(), 1)
+    # TODO: column_names() method not yet implemented
+    # assert_equal(stmt.column_names()[0], "x")
+    
+    var stmt2 = db.prepare("SELECT x AS a, x AS b FROM foo")
+    assert_equal(stmt2.column_count(), 2)
+    # assert_equal(stmt2.column_names()[0], "a")
+    # assert_equal(stmt2.column_names()[1], "b")
+
 
 
 fn test_prepare_execute() raises:
     var db = Connection.open_in_memory()
-    try:
-        db.execute_batch("CREATE TABLE foo(x INTEGER);")
-        
-        var insert_stmt = db.prepare("INSERT INTO foo(x) VALUES(?1)")
-        assert_equal(insert_stmt.execute([1]), 1)
-        assert_equal(insert_stmt.execute([2]), 1)
-        assert_equal(insert_stmt.execute([3]), 1)
-        
-        assert_equal(insert_stmt.execute(["hello"]), 1)
-        assert_equal(insert_stmt.execute(["goodbye"]), 1)
-        # TODO: Need to implement NULL parameter binding
-        # assert_equal(insert_stmt.execute([types.Null]), 1)
-        
-        var update_stmt = db.prepare("UPDATE foo SET x=?1 WHERE x<?2")
-        assert_equal(update_stmt.execute([3, 3]), 2)
-        assert_equal(update_stmt.execute([3, 3]), 0)
-        assert_equal(update_stmt.execute([8, 8]), 3)
-    finally:
-        db^.close()
+    db.execute_batch("CREATE TABLE foo(x INTEGER);")
+    
+    var insert_stmt = db.prepare("INSERT INTO foo(x) VALUES(?1)")
+    assert_equal(insert_stmt.execute([1]), 1)
+    assert_equal(insert_stmt.execute([2]), 1)
+    assert_equal(insert_stmt.execute([3]), 1)
+    
+    assert_equal(insert_stmt.execute(["hello"]), 1)
+    assert_equal(insert_stmt.execute(["goodbye"]), 1)
+    # TODO: Need to implement NULL parameter binding
+    # assert_equal(insert_stmt.execute([types.Null]), 1)
+    
+    var update_stmt = db.prepare("UPDATE foo SET x=?1 WHERE x<?2")
+    assert_equal(update_stmt.execute([3, 3]), 2)
+    assert_equal(update_stmt.execute([3, 3]), 0)
+    assert_equal(update_stmt.execute([8, 8]), 3)
+
 
 
 fn test_prepare_query() raises:
     var db = Connection.open_in_memory()
-    try:
-        db.execute_batch("CREATE TABLE foo(x INTEGER);")
-        
-        var insert_stmt = db.prepare("INSERT INTO foo(x) VALUES(?1)")
-        assert_equal(insert_stmt.execute([1]), 1)
-        assert_equal(insert_stmt.execute([2]), 1)
-        assert_equal(insert_stmt.execute([3]), 1)
-        
-        var query = db.prepare("SELECT x FROM foo WHERE x < ?1 ORDER BY x DESC")
-        
-        # First query with parameter 4
-        var rows = query.query([4])
-        var v = List[Int]()
-        for row in rows:
-            v.append(row.get[Int](0))
-        assert_equal(len(v), 3)
-        assert_equal(v[0], 3)
-        assert_equal(v[1], 2)
-        assert_equal(v[2], 1)
-        
-        # TODO: Need to figure out how to reset and reuse statements
-        # Second query with parameter 3
-        # query = db.prepare("SELECT x FROM foo WHERE x < ?1 ORDER BY x DESC")
-        # var rows2 = query.query([3])
-        # var v2 = List[Int]()
-        # for row in rows2:
-        #     v2.append(row.get[Int](0))
-        # assert_equal(len(v2), 2)
-        # assert_equal(v2[0], 2)
-        # assert_equal(v2[1], 1)
-    finally:
-        db^.close()
+    db.execute_batch("CREATE TABLE foo(x INTEGER);")
+    
+    var insert_stmt = db.prepare("INSERT INTO foo(x) VALUES(?1)")
+    assert_equal(insert_stmt.execute([1]), 1)
+    assert_equal(insert_stmt.execute([2]), 1)
+    assert_equal(insert_stmt.execute([3]), 1)
+    
+    var query = db.prepare("SELECT x FROM foo WHERE x < ?1 ORDER BY x DESC")
+    
+    # First query with parameter 4
+    var rows = query.query([4])
+    var v = List[Int]()
+    for row in rows:
+        v.append(row.get[Int](0))
+    assert_equal(len(v), 3)
+    assert_equal(v[0], 3)
+    assert_equal(v[1], 2)
+    assert_equal(v[2], 1)
+    
+    # TODO: Need to figure out how to reset and reuse statements
+    # Second query with parameter 3
+    # query = db.prepare("SELECT x FROM foo WHERE x < ?1 ORDER BY x DESC")
+    # var rows2 = query.query([3])
+    # var v2 = List[Int]()
+    # for row in rows2:
+    #     v2.append(row.get[Int](0))
+    # assert_equal(len(v2), 2)
+    # assert_equal(v2[0], 2)
+    # assert_equal(v2[1], 1)
+
 
 
 fn test_query_map() raises:
@@ -344,20 +303,18 @@ fn test_query_map() raises:
     fn get_string(r: Row) raises -> String:
         return r.get[String](1)
     
-    try:
-        db.execute_batch(sql)
-        
-        var query = db.prepare("SELECT x, y FROM foo ORDER BY x DESC")
-        var results = List[String]()
-        for row in query.query():
-            results.append(row.get[String](1))
-        
-        var concat = String("")
-        for i in range(len(results)):
-            concat += results[i]
-        assert_equal(concat, "hello, world!")
-    finally:
-        db^.close()
+    db.execute_batch(sql)
+    
+    var query = db.prepare("SELECT x, y FROM foo ORDER BY x DESC")
+    var results = List[String]()
+    for row in query.query():
+        results.append(row.get[String](1))
+    
+    var concat = String("")
+    for i in range(len(results)):
+        concat += results[i]
+    assert_equal(concat, "hello, world!")
+
 
 
 fn test_query_row() raises:
@@ -370,67 +327,57 @@ fn test_query_row() raises:
     
     fn get_int64(r: Row) raises -> Int64:
         return r.get[Int64](0)
+
+    db.execute_batch(sql)
+    assert_equal(db.query_row[transform=get_int64]("SELECT SUM(x) FROM foo"), 10)
     
-    try:
-        db.execute_batch(sql)
-        
-        assert_equal(db.query_row[transform=get_int64]("SELECT SUM(x) FROM foo"), 10)
-        
-        # This should return no rows error
-        with assert_raises(contains="No rows returned by query"):
-            _ = db.query_row[transform=get_int64]("SELECT x FROM foo WHERE x > 5")
-        
-        with assert_raises():
-            _ = db.query_row[transform=get_int64]("NOT A PROPER QUERY; test123")
-        
-        with assert_raises():
-            _ = db.query_row[transform=get_int64]("SELECT 1; SELECT 2;")
-    finally:
-        db^.close()
+    # This should return no rows error
+    with assert_raises(contains="No rows returned by query"):
+        _ = db.query_row[transform=get_int64]("SELECT x FROM foo WHERE x > 5")
+    
+    with assert_raises():
+        _ = db.query_row[transform=get_int64]("NOT A PROPER QUERY; test123")
+    
+    with assert_raises():
+        _ = db.query_row[transform=get_int64]("SELECT 1; SELECT 2;")
+
 
 
 fn test_pragma_query_row() raises:
     var db = Connection.open_in_memory()
-    
     fn get_string(r: Row) raises -> String:
         return r.get[String](0)
+
+    var mode = db.query_row[transform=get_string]("PRAGMA journal_mode")
+    assert_equal(mode, "memory")
     
-    try:
-        var mode = db.query_row[transform=get_string]("PRAGMA journal_mode")
-        assert_equal(mode, "memory")
-        
-        var mode2 = db.query_row[transform=get_string]("PRAGMA journal_mode=off")
-        # Note: system SQLite behavior may vary
-        assert_true(mode2 == "memory" or mode2 == "off")
-    finally:
-        db^.close()
+    var mode2 = db.query_row[transform=get_string]("PRAGMA journal_mode=off")
+    # Note: system SQLite behavior may vary
+    assert_true(mode2 == "memory" or mode2 == "off")
+
 
 
 fn test_prepare_failures() raises:
     var db = Connection.open_in_memory()
-    try:
-        db.execute_batch("CREATE TABLE foo(x INTEGER);")
-        
-        with assert_raises(contains="does_not_exist"):
-            _ = db.prepare("SELECT * FROM does_not_exist")
-    finally:
-        db^.close()
+    db.execute_batch("CREATE TABLE foo(x INTEGER);")
+    
+    with assert_raises(contains="does_not_exist"):
+        _ = db.prepare("SELECT * FROM does_not_exist")
+
 
 
 fn test_last_insert_rowid() raises:
     var db = Connection.open_in_memory()
-    try:
-        db.execute_batch("CREATE TABLE foo(x INTEGER PRIMARY KEY)")
-        db.execute_batch("INSERT INTO foo DEFAULT VALUES")
-        
-        assert_equal(db.last_insert_row_id(), 1)
-        
-        var stmt = db.prepare("INSERT INTO foo DEFAULT VALUES")
-        for _ in range(9):
-            _ = stmt.execute()
-        assert_equal(db.last_insert_row_id(), 10)
-    finally:
-        db^.close()
+    db.execute_batch("CREATE TABLE foo(x INTEGER PRIMARY KEY)")
+    db.execute_batch("INSERT INTO foo DEFAULT VALUES")
+    
+    assert_equal(db.last_insert_row_id(), 1)
+    
+    var stmt = db.prepare("INSERT INTO foo DEFAULT VALUES")
+    for _ in range(9):
+        _ = stmt.execute()
+    assert_equal(db.last_insert_row_id(), 10)
+
 
 
 fn test_total_changes() raises:
@@ -444,25 +391,19 @@ fn test_total_changes() raises:
                 BEGIN
                     INSERT INTO foo VALUES(new.x, 'bar', new.desc);
                 END;"""
-    
-    try:
-        db.execute_batch(sql)
-        var total_changes_before = db.total_changes()
-        var stmt = db.prepare("INSERT INTO foo_bar VALUES(null, 'baz');")
-        var changes = stmt.execute()
-        var total_changes_after = db.total_changes()
-        assert_equal(changes, 0)
-        assert_equal(total_changes_after - total_changes_before, 1)
-    finally:
-        db^.close()
+
+    db.execute_batch(sql)
+    var total_changes_before = db.total_changes()
+    var stmt = db.prepare("INSERT INTO foo_bar VALUES(null, 'baz');")
+    var changes = stmt.execute()
+    var total_changes_after = db.total_changes()
+    assert_equal(changes, 0)
+    assert_equal(total_changes_after - total_changes_before, 1)
 
 
 fn test_is_autocommit() raises:
     var db = Connection.open_in_memory()
-    try:
-        assert_true(db.is_autocommit())
-    finally:
-        db^.close()
+    assert_true(db.is_autocommit())
 
 
 # TODO: Need to work on this.
@@ -483,24 +424,19 @@ fn test_is_autocommit() raises:
 
 fn test_statement_debugging() raises:
     var db = Connection.open_in_memory()
-    try:
-        var query = "SELECT 12345"
-        var stmt = db.prepare(query)
-        var repr = stmt.__repr__()
-        assert_true(query in repr)
-    finally:
-        db^.close()
+    var query = "SELECT 12345"
+    var stmt = db.prepare(query)
+    var repr = stmt.__repr__()
+    assert_true(query in repr)
+
 
 
 fn test_notnull_constraint_error() raises:
     var db = Connection.open_in_memory()
-    try:
-        db.execute_batch("CREATE TABLE foo(x NOT NULL)")
-        
-        with assert_raises(contains="constraint"):
-            _ = db.execute("INSERT INTO foo (x) VALUES (NULL)")
-    finally:
-        db^.close()
+    db.execute_batch("CREATE TABLE foo(x NOT NULL)")
+    
+    with assert_raises(contains="constraint"):
+        _ = db.execute("INSERT INTO foo (x) VALUES (NULL)")
 
 
 # Skipping test_version_string, test_interrupt, test_interrupt_close as they require special functions
@@ -510,21 +446,19 @@ fn test_get_raw() raises:
     var db = Connection.open_in_memory()
     var vals = List[String]("foobar", "1234", "qwerty")
     
-    try:
-        db.execute_batch("CREATE TABLE foo(i, x);")
-        var insert_stmt = db.prepare("INSERT INTO foo(i, x) VALUES(?1, ?2)")
-        
-        for i in range(len(vals)):
-            assert_equal(insert_stmt.execute([i, vals[i]]), 1)
-        
-        # TODO: Add tests for get_ref and as_str methods when implemented
-        var query = db.prepare("SELECT i, x FROM foo")
-        for row in query.query():
-            var i = row.get[Int](0)
-            var x = row.get[String](1)
-            assert_equal(x, vals[i])
-    finally:
-        db^.close()
+    db.execute_batch("CREATE TABLE foo(i, x);")
+    var insert_stmt = db.prepare("INSERT INTO foo(i, x) VALUES(?1, ?2)")
+    
+    for i in range(len(vals)):
+        assert_equal(insert_stmt.execute([i, vals[i]]), 1)
+    
+    # TODO: Add tests for get_ref and as_str methods when implemented
+    var query = db.prepare("SELECT i, x FROM foo")
+    for row in query.query():
+        var i = row.get[Int](0)
+        var x = row.get[String](1)
+        assert_equal(x, vals[i])
+
 
 
 # Skipping test_from_handle, test_from_handle_owned, query_and_then_tests as they require unsafe operations
@@ -540,11 +474,9 @@ fn test_dynamic() raises:
         assert_equal(r.stmt[].column_count(), 2)
         return None
     
-    try:
-        db.execute_batch(sql)
-        _ = db.query_row[transform=check_columns]("SELECT * FROM foo")
-    finally:
-        db^.close()
+    db.execute_batch(sql)
+    _ = db.query_row[transform=check_columns]("SELECT * FROM foo")
+
 
 
 fn test_params() raises:
@@ -553,30 +485,24 @@ fn test_params() raises:
     fn get_int(r: Row) raises -> Int:
         return r.get[Int](0)
     
-    try:
-        var result = db.query_row[transform=get_int]("""
-        SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10,
-        ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20,
-        ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30,
-        ?31, ?32, ?33, ?34
-        """, [
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-        ]
-        )
-        assert_equal(result, 1)
-    finally:
-        db^.close()
+    var result = db.query_row[transform=get_int]("""
+    SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10,
+    ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20,
+    ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30,
+    ?31, ?32, ?33, ?34
+    """, [
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    ]
+    )
+    assert_equal(result, 1)
+
 
 
 fn test_alter_table() raises:
     var db = Connection.open_in_memory()
-    try:
-        db.execute_batch("CREATE TABLE x(t);")
-        # execute_batch should be used but execute should also work
-        _ = db.execute("ALTER TABLE x RENAME TO y;")
-    finally:
-        db^.close()
+    db.execute_batch("CREATE TABLE x(t);")
+    db.execute_batch("ALTER TABLE x RENAME TO y;")
 
 
 # Skipping test_batch, test_invalid_batch, test_returning as they require Batch type
@@ -594,12 +520,9 @@ fn test_alter_table() raises:
 
 # fn db_readonly() raises:
 #     var db = Connection.open_in_memory()
-#     try:
-#         # TODO: is_readonly() method not yet implemented
-#         # assert_false(db.is_readonly("main"))
-#         pass
-#     finally:
-#         db^.close()
+#     # TODO: is_readonly() method not yet implemented
+#     assert_false(db.is_read_only("main"))
+#     pass
 
 
 # Skipping prepare_and_bind, test_db_name, test_is_interrupted, release_memory
