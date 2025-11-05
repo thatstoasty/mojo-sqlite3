@@ -84,9 +84,8 @@ fn test_query_map_named() raises:
             return 0
 
     var stmt = db.prepare("SELECT id FROM test where name = :name")
-    for row in stmt.query_map[transform=get_doubled_id]([{":name", "one"}]):
+    for row in stmt.query_map[get_doubled_id]([{":name", "one"}]):
         assert_equal(row, 2)
-
 
 
 fn test_unbound_parameters_are_null() raises:
@@ -99,7 +98,7 @@ fn test_unbound_parameters_are_null() raises:
     fn get_value(r: Row) raises -> NoneType:
         var result = r.get_string_slice(0)
         if not result:
-            return None
+            return
         raise Error("Expected NULL value!")
 
     _ = db.query_row[get_value]("SELECT y FROM test WHERE x = 'one'")
@@ -193,7 +192,7 @@ fn test_list_params() raises:
         ?9, ?10, ?11, ?12,
         ?13, ?14, ?15, ?16
     )"""
-    var s4 = db.query_row[transform=get_string](
+    var s4 = db.query_row[get_string](
         query,
         [0, "a", 1, "b", 2, "c", 3, "d", 4, "e", 5, "f", 6, "g", 7, "h"]
     )
@@ -285,7 +284,7 @@ fn test_bind_parameters() raises:
 
     # Test with list of parameters - query_row doesn't directly support List types like this
     # Instead we'll test parameter binding through the execute path
-    var s = db.query_row[transform=get_int]("SELECT ?1 + ?2", [5, 10])
+    var s = db.query_row[get_int]("SELECT ?1 + ?2", [5, 10])
     assert_equal(s, 15)
 
 
@@ -357,7 +356,7 @@ fn test_utf16_conversion() raises:
     db.execute_batch("CREATE TABLE foo(x TEXT)")
     var expected = "テスト"
     _ = db.execute("INSERT INTO foo(x) VALUES (?1)", [expected])
-    var actual = db.query_row[transform=get_string]("SELECT x FROM foo")
+    var actual = db.query_row[get_string]("SELECT x FROM foo")
     assert_equal(actual, expected)
 
 

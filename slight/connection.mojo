@@ -272,7 +272,9 @@ struct Connection(Movable):
             _ = stmt.finalize()
 
     fn query_row[
-        T: Copyable & Movable, //, transform: fn (Row) raises -> T
+        T: Copyable & Movable,
+        //,
+        transform: fn (Row) raises -> T
     ](mut self, var sql: String, params: List[Parameter] = []) raises -> T:
         """Executes the query and returns a single row.
 

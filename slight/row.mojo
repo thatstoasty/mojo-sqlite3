@@ -43,10 +43,10 @@ __extension StringSlice(RowIndex):
 
 
 @fieldwise_init
-struct Row[origin: ImmutOrigin, ptr: Origin](Copyable, Movable):
+struct Row[connection_origin: ImmutOrigin, stmt_origin: ImmutOrigin](Copyable, Movable):
     """Represents a single row in the result set of a SQL query."""
 
-    var stmt: Pointer[Statement[origin], ptr]
+    var stmt: Pointer[Statement[connection_origin], stmt_origin]
     """A pointer to the statement that produced this row."""
 
     fn get_int64(self, idx: Some[RowIndex]) raises -> Optional[Int]:
@@ -135,7 +135,7 @@ struct Row[origin: ImmutOrigin, ptr: Origin](Copyable, Movable):
         else:
             raise InvalidColumnTypeError
 
-    fn get_string_slice(self, idx: Some[RowIndex]) raises -> Optional[StringSlice[origin]]:
+    fn get_string_slice(self, idx: Some[RowIndex]) raises -> Optional[StringSlice[connection_origin]]:
         """Gets a StringSlice value from the specified column.
 
         Args:
@@ -155,8 +155,8 @@ struct Row[origin: ImmutOrigin, ptr: Origin](Copyable, Movable):
 
         if value.isa[SQLite3Null]():
             return None
-        elif value.isa[SQLite3Text[origin]]():
-            return value[SQLite3Text[origin]].value
+        elif value.isa[SQLite3Text[connection_origin]]():
+            return value[SQLite3Text[connection_origin]].value
         else:
             raise InvalidColumnTypeError
 
@@ -184,15 +184,15 @@ struct Row[origin: ImmutOrigin, ptr: Origin](Copyable, Movable):
         return S(self.stmt[].value_ref(i))
 
 
-struct Rows[origin: ImmutOrigin, ptr: Origin](Copyable, Iterator, Movable):
+struct Rows[connection_origin: ImmutOrigin, stmt_origin: ImmutOrigin](Copyable, Iterator, Movable):
     """An iterator over rows returned by a SQL query."""
 
-    alias Element = Row[origin, ptr]
+    alias Element = Row[connection_origin, stmt_origin]
 
-    var stmt: Pointer[Statement[origin], ptr]
+    var stmt: Pointer[Statement[connection_origin], stmt_origin]
     """A pointer to the statement that produces rows."""
 
-    fn __init__(out self, stmt: Pointer[Statement[origin], ptr]):
+    fn __init__(out self, stmt: Pointer[Statement[connection_origin], stmt_origin]):
         """Initializes a new Rows iterator.
 
         Args:
@@ -245,17 +245,23 @@ struct Rows[origin: ImmutOrigin, ptr: Origin](Copyable, Iterator, Movable):
             # raise
 
 
-struct MappedRows[T: Copyable & Movable, //, origin: ImmutOrigin, ptr: Origin, transform: fn (Row) -> T](
+struct MappedRows[
+    T: Copyable & Movable,
+    //,
+    connection_origin: ImmutOrigin,
+    stmt_origin: ImmutOrigin,
+    transform: fn (Row) -> T
+](
     Copyable, Iterator, Movable
 ):
     """An iterator that transforms rows using a mapping function."""
 
     alias Element = T
 
-    var rows: Rows[origin, ptr]
+    var rows: Rows[connection_origin, stmt_origin]
     """The underlying rows iterator."""
 
-    fn __init__(out self, rows: Rows[origin, ptr]):
+    fn __init__(out self, rows: Rows[connection_origin, stmt_origin]):
         """Initializes a new MappedRows iterator.
 
         Args:
