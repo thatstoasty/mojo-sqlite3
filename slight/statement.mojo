@@ -50,7 +50,7 @@ fn eq_ignore_ascii_case(a: Span[Byte], b: Span[Byte]) -> Bool:
     return True
 
 
-struct Statement[connection_origin: ImmutOrigin](Movable):
+struct Statement[conn: ImmutOrigin](Movable):
     """A prepared SQL statement that can be executed multiple times with different parameters.
 
     This struct wraps a SQLite prepared statement and provides methods for binding parameters,
@@ -58,12 +58,12 @@ struct Statement[connection_origin: ImmutOrigin](Movable):
     underlying SQLite statement.
     """
 
-    var connection: Pointer[Connection, connection_origin]
+    var connection: Pointer[Connection, conn]
     """A pointer to the SQLite connection that created this statement."""
     var stmt: RawStatement
     """The raw SQLite statement wrapper."""
 
-    fn __init__(out self, connection: Pointer[Connection, connection_origin], var stmt: RawStatement):
+    fn __init__(out self, connection: Pointer[Connection, conn], var stmt: RawStatement):
         """Initializes a new Statement with the given connection and raw statement pointer.
 
         Args:
@@ -73,7 +73,7 @@ struct Statement[connection_origin: ImmutOrigin](Movable):
         self.connection = connection
         self.stmt = stmt^
 
-    fn __init__(out self, connection: Pointer[Connection, connection_origin], stmt: ExternalMutPointer[sqlite3_stmt]):
+    fn __init__(out self, connection: Pointer[Connection, conn], stmt: ExternalMutPointer[sqlite3_stmt]):
         """Initializes a new Statement with the given connection and raw statement pointer.
 
         Args:
@@ -425,7 +425,7 @@ struct Statement[connection_origin: ImmutOrigin](Movable):
 
             self.bind_parameter(kv[1], i[])
 
-    fn query(mut self, params: List[Parameter] = []) raises -> Rows[connection_origin, origin_of(self)]:
+    fn query(mut self, params: List[Parameter] = []) raises -> Rows[conn, origin_of(self)]:
         """Executes the statement as a query and returns an iterator over the result rows.
 
         This method is intended for SELECT statements that return data.
@@ -443,7 +443,7 @@ struct Statement[connection_origin: ImmutOrigin](Movable):
         self.bind_parameters(params)
         return Rows(Pointer(to=self))
 
-    fn query(mut self, params: Dict[String, Parameter]) raises -> Rows[connection_origin, origin_of(self)]:
+    fn query(mut self, params: Dict[String, Parameter]) raises -> Rows[conn, origin_of(self)]:
         """Executes the statement as a query and returns an iterator over the result rows.
 
         This method is intended for SELECT statements that return data.
@@ -461,7 +461,7 @@ struct Statement[connection_origin: ImmutOrigin](Movable):
         self.bind_parameters_named(params)
         return Rows(Pointer(to=self))
 
-    fn query(mut self, params: List[Tuple[String, Parameter]]) raises -> Rows[connection_origin, origin_of(self)]:
+    fn query(mut self, params: List[Tuple[String, Parameter]]) raises -> Rows[conn, origin_of(self)]:
         """Executes the statement as a query and returns an iterator over the result rows.
 
         This method is intended for SELECT statements that return data.
@@ -482,7 +482,7 @@ struct Statement[connection_origin: ImmutOrigin](Movable):
     fn query_map[
         T: Copyable & Movable, //, transform: fn (Row) -> T
     ](mut self, params: List[Parameter] = []) raises -> MappedRows[
-        connection_origin,
+        conn,
         origin_of(self),
         transform
     ]:
@@ -504,11 +504,11 @@ struct Statement[connection_origin: ImmutOrigin](Movable):
         Raises:
             Error: If parameter binding fails or the query execution fails.
         """
-        return MappedRows[connection_origin, origin_of(self), transform](self.query(params))
+        return MappedRows[conn, origin_of(self), transform](self.query(params))
 
     fn query_map[
         T: Copyable & Movable, //, transform: fn (Row) -> T
-    ](mut self, params: Dict[String, Parameter]) raises -> MappedRows[connection_origin, origin_of(self), transform]:
+    ](mut self, params: Dict[String, Parameter]) raises -> MappedRows[conn, origin_of(self), transform]:
         """Executes the query and returns a mapped iterator that transforms each row.
 
         This method applies a transformation function to each row returned by the query,
@@ -527,11 +527,11 @@ struct Statement[connection_origin: ImmutOrigin](Movable):
         Raises:
             Error: If parameter binding fails or the query execution fails.
         """
-        return MappedRows[connection_origin, origin_of(self), transform](self.query(params))
+        return MappedRows[conn, origin_of(self), transform](self.query(params))
 
     fn query_map[
         T: Copyable & Movable, //, transform: fn (Row) -> T
-    ](mut self, params: List[Tuple[String, Parameter]]) raises -> MappedRows[connection_origin, origin_of(self), transform]:
+    ](mut self, params: List[Tuple[String, Parameter]]) raises -> MappedRows[conn, origin_of(self), transform]:
         """Executes the query and returns a mapped iterator that transforms each row.
 
         This method applies a transformation function to each row returned by the query,
@@ -550,7 +550,7 @@ struct Statement[connection_origin: ImmutOrigin](Movable):
         Raises:
             Error: If parameter binding fails or the query execution fails.
         """
-        return MappedRows[connection_origin, origin_of(self), transform](self.query(params))
+        return MappedRows[conn, origin_of(self), transform](self.query(params))
 
     fn query_row[
         T: Copyable & Movable, //, transform: fn (Row) raises -> T

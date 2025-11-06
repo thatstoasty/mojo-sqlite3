@@ -106,7 +106,7 @@ fn test_open_failure() raises:
 fn test_table_creation_and_insertion() raises:
     var db = Connection.open_in_memory()
 
-    alias create_table = """
+    db.execute_batch("""
     CREATE TABLE COMPANY(
         ID INT PRIMARY KEY NOT NULL,
         NAME TEXT NOT NULL,
@@ -115,28 +115,25 @@ fn test_table_creation_and_insertion() raises:
         SALARY REAL,
         IS_ACTIVE BOOLEAN NOT NULL
     );
-    """
-
-    db.execute_batch(create_table)
-    
-    alias create_tables = """
     CREATE TABLE EMPLOYEE(ID INT PRIMARY KEY NOT NULL);
     CREATE TABLE DEPARTMENT(ID INT PRIMARY KEY NOT NULL);
-    """
+    """)
 
-    db.execute_batch(create_tables)
-    alias check_exists = "SELECT name FROM sqlite_master WHERE type='table' AND name = 'DEPARTMENT';"
-    var stmt = db.prepare(check_exists)
+    var stmt = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name = 'DEPARTMENT';")
     assert_true(stmt.exists())
 
     # Running multiple inserts in one query doesn't work atm. Will need to fix
-    alias insert_values = """
-    INSERT INTO COMPANY (ID, NAME, AGE, ADDRESS, SALARY, IS_ACTIVE) VALUES 
-    (1, 'Bob', 30, '123 Main St', 45000.0, False),
-    (2, 'Alice', 30, '123 Main St', 50000.0, True);
-    """
     try:
-        assert_equal(String(db.execute(insert_values), " row(s) affected."), "2 row(s) affected.")
+        assert_equal(
+            String(
+                db.execute("""
+                INSERT INTO COMPANY (ID, NAME, AGE, ADDRESS, SALARY, IS_ACTIVE) VALUES 
+                (1, 'Bob', 30, '123 Main St', 45000.0, False),
+                (2, 'Alice', 30, '123 Main St', 50000.0, True);
+                """),
+                " row(s) affected."
+            ),
+            "2 row(s) affected.")
     except e:
         if e.as_string_slice() == "not an error":
             raise
@@ -173,14 +170,12 @@ fn test_bad_open_flags() raises:
 
 
 fn test_execute_batch() raises:
-    var db = Connection.open_in_memory()
-    var sql = """CREATE TABLE foo(x INTEGER);
+    var db = Connection.open_in_memory()    
+    db.execute_batch("""CREATE TABLE foo(x INTEGER);
     INSERT INTO foo VALUES(1);
     INSERT INTO foo VALUES(2);
     INSERT INTO foo VALUES(3);
-    INSERT INTO foo VALUES(4);"""
-    
-    db.execute_batch(sql)
+    INSERT INTO foo VALUES(4);""")
     db.execute_batch("UPDATE foo SET x = 3 WHERE x < 3")
     
     with assert_raises():
@@ -293,17 +288,15 @@ fn test_prepare_query() raises:
 
 
 fn test_query_map() raises:
-    var db = Connection.open_in_memory()
-    var sql = """CREATE TABLE foo(x INTEGER, y TEXT);
-    INSERT INTO foo VALUES(4, 'hello');
-    INSERT INTO foo VALUES(3, ', ');
-    INSERT INTO foo VALUES(2, 'world');
-    INSERT INTO foo VALUES(1, '!');"""
-    
+    var db = Connection.open_in_memory()    
     fn get_string(r: Row) raises -> String:
         return r.get[String](1)
     
-    db.execute_batch(sql)
+    db.execute_batch("""CREATE TABLE foo(x INTEGER, y TEXT);
+    INSERT INTO foo VALUES(4, 'hello');
+    INSERT INTO foo VALUES(3, ', ');
+    INSERT INTO foo VALUES(2, 'world');
+    INSERT INTO foo VALUES(1, '!');""")
     
     var query = db.prepare("SELECT x, y FROM foo ORDER BY x DESC")
     var results = List[String]()
@@ -314,7 +307,6 @@ fn test_query_map() raises:
     for i in range(len(results)):
         concat += results[i]
     assert_equal(concat, "hello, world!")
-
 
 
 fn test_query_row() raises:
@@ -329,18 +321,17 @@ fn test_query_row() raises:
         return r.get[Int64](0)
 
     db.execute_batch(sql)
-    assert_equal(db.query_row[transform=get_int64]("SELECT SUM(x) FROM foo"), 10)
+    assert_equal(db.query_row[get_int64]("SELECT SUM(x) FROM foo"), 10)
     
     # This should return no rows error
     with assert_raises(contains="No rows returned by query"):
-        _ = db.query_row[transform=get_int64]("SELECT x FROM foo WHERE x > 5")
+        _ = db.query_row[get_int64]("SELECT x FROM foo WHERE x > 5")
     
     with assert_raises():
-        _ = db.query_row[transform=get_int64]("NOT A PROPER QUERY; test123")
+        _ = db.query_row[get_int64]("NOT A PROPER QUERY; test123")
     
     with assert_raises():
-        _ = db.query_row[transform=get_int64]("SELECT 1; SELECT 2;")
-
+        _ = db.query_row[get_int64]("SELECT 1; SELECT 2;")
 
 
 fn test_pragma_query_row() raises:
@@ -365,7 +356,6 @@ fn test_prepare_failures() raises:
         _ = db.prepare("SELECT * FROM does_not_exist")
 
 
-
 fn test_last_insert_rowid() raises:
     var db = Connection.open_in_memory()
     db.execute_batch("CREATE TABLE foo(x INTEGER PRIMARY KEY)")
@@ -377,7 +367,6 @@ fn test_last_insert_rowid() raises:
     for _ in range(9):
         _ = stmt.execute()
     assert_equal(db.last_insert_row_id(), 10)
-
 
 
 fn test_total_changes() raises:
@@ -430,7 +419,6 @@ fn test_statement_debugging() raises:
     assert_true(query in repr)
 
 
-
 fn test_notnull_constraint_error() raises:
     var db = Connection.open_in_memory()
     db.execute_batch("CREATE TABLE foo(x NOT NULL)")
@@ -475,8 +463,7 @@ fn test_dynamic() raises:
         return None
     
     db.execute_batch(sql)
-    _ = db.query_row[transform=check_columns]("SELECT * FROM foo")
-
+    _ = db.query_row[check_columns]("SELECT * FROM foo")
 
 
 fn test_params() raises:
@@ -485,7 +472,7 @@ fn test_params() raises:
     fn get_int(r: Row) raises -> Int:
         return r.get[Int](0)
     
-    var result = db.query_row[transform=get_int]("""
+    var result = db.query_row[get_int]("""
     SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10,
     ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20,
     ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30,

@@ -1654,6 +1654,29 @@ struct _sqlite3(Movable):
         ) -> NoneType,
         destructor_callback: ResultDestructorFn,
     ) -> c_int:
+        """Register An Aggregate Window Function.
+
+        This function is used to register aggregate window functions. Window
+        functions are similar to aggregate functions but operate over a sliding
+        window of rows. In addition to xStep and xFinal callbacks, window
+        functions require xValue and xInverse callbacks for computing window
+        frames efficiently.
+
+        Args:
+            db: Database connection handle.
+            zFunctionName: Name of the SQL function to create.
+            nArg: Number of arguments the function accepts (-1 for variable).
+            eTextRep: Text encoding (SQLITE_UTF8, SQLITE_UTF16, etc.).
+            pApp: Application data pointer passed to callbacks.
+            xStep: Callback invoked for each row entering the window.
+            xFinal: Callback invoked to compute the final aggregate value.
+            xValue: Callback invoked to get current aggregate value.
+            xInverse: Callback invoked for each row leaving the window.
+            destructor_callback: Callback invoked when the function is deleted.
+
+        Returns:
+            SQLITE_OK on success, or an error code on failure.
+        """
         return self.lib.get_function[
             fn (
                 type_of(db),
@@ -1672,22 +1695,72 @@ struct _sqlite3(Movable):
         )
 
     fn sqlite3_aggregate_count(self, ctx: ExternalMutPointer[sqlite3_context]) -> c_int:
+        """Number Of Rows In An Aggregate Context (Deprecated).
+
+        This function returns the number of times that the step function of
+        an aggregate has been called. This function is deprecated and may
+        be removed in a future release of SQLite.
+
+        Args:
+            ctx: SQL function context.
+
+        Returns:
+            Number of times the aggregate step function has been called.
+        """
         return self.lib.get_function[fn (type_of(ctx)) -> c_int]("sqlite3_aggregate_count")(ctx)
 
     fn sqlite3_expired(self, pStmt: ExternalMutPointer[sqlite3_stmt]) -> c_int:
+        """Determine If A Prepared Statement Is Expired (Deprecated).
+
+        This function was used to determine if a prepared statement had been
+        expired and needed to be reprepared. It is deprecated and always
+        returns 0.
+
+        Args:
+            pStmt: Prepared statement handle.
+
+        Returns:
+            Always returns 0.
+        """
         return self.lib.get_function[fn (type_of(pStmt)) -> c_int]("sqlite3_expired")(pStmt)
 
     fn sqlite3_transfer_bindings(
         self, fromStmt: ExternalMutPointer[sqlite3_stmt], toStmt: ExternalMutPointer[sqlite3_stmt]
     ) -> c_int:
+        """Transfer Bindings From One Statement To Another (Deprecated).
+
+        This function was used to transfer bindings from one prepared statement
+        to another. It is deprecated and may be removed in a future release.
+
+        Args:
+            fromStmt: Source statement handle.
+            toStmt: Destination statement handle.
+
+        Returns:
+            SQLITE_OK on success, or an error code on failure.
+        """
         return self.lib.get_function[fn (type_of(fromStmt), type_of(toStmt)) -> c_int]("sqlite3_transfer_bindings")(
             fromStmt, toStmt
         )
 
     fn sqlite3_global_recover(self) -> c_int:
+        """Attempt To Free Heap Memory (Deprecated).
+
+        This function was used to attempt to recover from allocation failures.
+        It is deprecated and may be removed in a future release. It always
+        returns SQLITE_OK and does nothing.
+
+        Returns:
+            Always returns SQLITE_OK.
+        """
         return self.lib.get_function[fn () -> c_int]("sqlite3_global_recover")()
 
     fn sqlite3_thread_cleanup(self) -> NoneType:
+        """Clean Up Thread-Local Storage (Deprecated).
+
+        This function was used to clean up thread-local storage for SQLite.
+        It is deprecated and does nothing in modern versions of SQLite.
+        """
         return self.lib.get_function[fn () -> NoneType]("sqlite3_thread_cleanup")()
 
     fn sqlite3_memory_alarm[
@@ -1698,6 +1771,20 @@ struct _sqlite3(Movable):
         arg: OpaqueMutPointer,
         n: Int64,
     ) -> c_int:
+        """Register A Callback For Memory Allocation Events (Deprecated).
+
+        This function was used to register a callback that would be invoked
+        when memory usage exceeded a threshold. It is deprecated and may be
+        removed in a future release.
+
+        Args:
+            callback: Callback function to invoke.
+            arg: User data pointer passed to callback.
+            n: Memory threshold in bytes.
+
+        Returns:
+            SQLITE_OK on success, or an error code on failure.
+        """
         return self.lib.get_function[fn (type_of(callback), type_of(arg), type_of(n)) -> c_int]("sqlite3_memory_alarm")(
             callback, arg, n
         )

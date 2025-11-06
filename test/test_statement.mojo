@@ -84,7 +84,7 @@ fn test_query_map_named() raises:
             return 0
 
     var stmt = db.prepare("SELECT id FROM test where name = :name")
-    for row in stmt.query_map[get_doubled_id]([{":name", "one"}]):
+    for row in stmt.query_map[transform=get_doubled_id]([{":name", "one"}]):
         assert_equal(row, 2)
 
 
@@ -240,15 +240,14 @@ fn query_one() raises:
 
 fn test_query_by_column_name() raises:
     var db = Connection.open_in_memory()
-    var sql = """BEGIN;
-    CREATE TABLE foo(x INTEGER, y INTEGER);
-    INSERT INTO foo VALUES(1, 3);
-    END;"""
     
     fn get_string(r: Row) raises -> Int:
         return r.get[Int]("y")
 
-    db.execute_batch(sql)
+    db.execute_batch("""BEGIN;
+    CREATE TABLE foo(x INTEGER, y INTEGER);
+    INSERT INTO foo VALUES(1, 3);
+    END;""")
     var stmt = db.prepare("SELECT y FROM foo")
     var y = stmt.query_row[transform=get_string]()
     assert_equal(y, 3)
