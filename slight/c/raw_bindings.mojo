@@ -899,7 +899,7 @@ struct _sqlite3(Movable):
         nByte: c_int,
         prepFlags: c_uint,
         ppStmt: UnsafeMutPointer[ExternalMutPointer[sqlite3_stmt], stmt_origin],
-        pzTail: UnsafeMutPointer[UnsafePointer[c_char, mut=False, origin=sql_origin], tail_origin],
+        pzTail: UnsafeMutPointer[UnsafeImmutPointer[c_char, sql_origin], tail_origin],
     ) -> c_int:
         """Compile an SQL statement into a prepared statement object (Version 3).
 

@@ -161,7 +161,7 @@ struct InnerConnection(Movable):
             Will return an `Error` if the underlying SQLite prepare call fails.
         """
         var stmt = ExternalMutPointer[sqlite3_stmt]()
-        var str = sql.unsafe_cstr_ptr()
+        var str = UnsafePointerV2(sql.unsafe_cstr_ptr())
         var c_tail = UnsafePointerV2(to=str)
 
         try:

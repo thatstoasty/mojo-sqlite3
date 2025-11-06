@@ -22,8 +22,9 @@ sort_imports = "isort **/*.mojo -m 3 --line-length 120 --lines-after-imports 2 -
 format = [{ task = "mojo_format" }, { task = "sort_imports" }]
 
 # Build and publish
-build = { cmd = "python3 scripts/util.py build-conda-package" }
-publish = { cmd = "python3 scripts/util.py publish", env = { PREFIX_API_KEY = "$PREFIX_API_KEY" } }
+build = { cmd = "pixi build -o ." }
+publish = { cmd = "find . -name 'slight-*.conda' | xargs pixi upload https://prefix.dev/api/v1/upload/mojo-community" }
+build_and_publish = [{ task = "build" }, { task = "publish" }]
 
 [package]
 name = "slight"

@@ -395,6 +395,48 @@ fn test_is_autocommit() raises:
     assert_true(db.is_autocommit())
 
 
+fn test_column_exists() raises:
+    var db = Connection.open_in_memory()
+    # Check column exists in sqlite_master table
+    assert_true(db.column_exists(None, "sqlite_master", "type"))
+    assert_true(db.column_exists("temp", "sqlite_master", "type"))
+    assert_false(db.column_exists("main", "sqlite_temp_master", "type"))
+
+
+fn test_table_exists() raises:
+    var db = Connection.open_in_memory()
+    # Check that sqlite_master table exists
+    assert_true(db.table_exists(None, "sqlite_master"))
+    assert_true(db.table_exists("temp", "sqlite_master"))
+    assert_false(db.table_exists("main", "sqlite_temp_master"))
+
+
+fn test_column_metadata() raises:
+    var db = Connection.open_in_memory()
+    
+    # Get column metadata for the 'type' column in sqlite_master table
+    var metadata = db.column_metadata(None, "sqlite_master", "type")
+    
+    # Check data type (should be TEXT)
+    var data_type = metadata.data_type
+    if data_type:
+        assert_equal(data_type.value().upper(), "TEXT")
+    
+    # Check collation sequence (should be BINARY)
+    var coll_seq = metadata.collation_sequence
+    if coll_seq:
+        assert_equal(coll_seq.value(), "BINARY")
+    
+    # Check constraints
+    assert_false(metadata.not_null)
+    assert_false(metadata.primary_key)
+    assert_false(metadata.auto_increment)
+    
+    # Test that querying non-existent column raises an error
+    with assert_raises():
+        _ = db.column_metadata(None, "sqlite_master", "foo")
+
+
 # TODO: Need to work on this.
 # fn test_is_busy() raises:
 #     var db = Connection.open_in_memory()
@@ -485,11 +527,12 @@ fn test_params() raises:
     assert_equal(result, 1)
 
 
-
 fn test_alter_table() raises:
     var db = Connection.open_in_memory()
     db.execute_batch("CREATE TABLE x(t);")
     db.execute_batch("ALTER TABLE x RENAME TO y;")
+
+
 
 
 # Skipping test_batch, test_invalid_batch, test_returning as they require Batch type

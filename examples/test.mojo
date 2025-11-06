@@ -11,16 +11,17 @@ struct Employee(Copyable, Movable, Writable):
     var salary: Float64
     var is_active: Bool
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to[W: Writer, //](self, mut writer: W):
         writer.write("Employee(id=", self.id, ", name=", self.name, ", age=", self.age, ", address=", self.address, ", salary=", self.salary, ", is_active=", self.is_active, ")")
 
 
 fn main() raises:
-    var conn = Connection.open_in_memory()
+    var db = Connection.open_in_memory()
     print("Connected to the database successfully.")
-    print("Database path:", conn.path().value())
+    print("Database path:", db.path().value())
 
-    alias create_table = """
+    print("Creating table...")
+    db.execute_batch("""
     CREATE TABLE COMPANY(
         ID INT PRIMARY KEY NOT NULL,
         NAME TEXT NOT NULL,
@@ -29,61 +30,39 @@ fn main() raises:
         SALARY REAL,
         IS_ACTIVE BOOLEAN NOT NULL
     );
-    """
-
-    try:
-        print("Creating table...")
-        _ = conn.execute(create_table)
-    except e:
-        print("Error creating table: ", e)
-        conn^.close()
-        raise
+    """)
 
     # Running multiple inserts in one query doesn't work atm. Will need to fix
-    alias insert_values = """
-    INSERT INTO COMPANY (ID, NAME, AGE, ADDRESS, SALARY, IS_ACTIVE) VALUES 
-    (1, 'Bob', 30, '123 Main St', 45000.0, False),
-    (2, 'Alice', 30, '123 Main St', 50000.0, True);
-    """
     try:
         print("Inserting data...")
-        print(conn.execute(insert_values), "row(s) affected.")
+        print(db.execute("""
+        INSERT INTO COMPANY (ID, NAME, AGE, ADDRESS, SALARY, IS_ACTIVE) VALUES 
+        (1, 'Bob', 30, '123 Main St', 45000.0, False),
+        (2, 'Alice', 30, '123 Main St', 50000.0, True);
+        """), "row(s) affected.")
     except e:
         if e.as_string_slice() == "not an error":
             print("No error, but no rows affected?")
-            conn^.close()
+            db^.close()
             return
         print("Error inserting data: ", e)
-        conn^.close()
+        db^.close()
         raise
 
-    alias select_user_query = "SELECT * FROM COMPANY WHERE NAME = ?;"
-    try:
-        var stmt = conn.prepare(select_user_query)
-        print(stmt.sql().value())
-        print(stmt.expanded_sql().value())
-        for row in stmt.query(["Alice"]):
-            print("Alice ID:", row.get[Int]("id"))
-    except e:
-        print("Error querying data: ", e)
-        conn^.close()
-        return
+    var stmt = db.prepare("SELECT * FROM COMPANY WHERE NAME = ?;")
+    print(stmt.sql().value())
+    print(stmt.expanded_sql().value())
+    for row in stmt.query(["Alice"]):
+        print("Alice ID:", row.get[Int]("id"))
         
-    alias select_query = "SELECT * FROM COMPANY;"
-
-    try:
-        var stmt = conn.prepare(select_query)
-        for row in stmt.query():
-            print("Row ID:", row.get[Int](0))
-            print("Name:", row.get[String](1))
-            print("Age:", row.get[Int](2))
-            print("Salary:", row.get[Float64](4))
-            print("Active:", row.get[Bool](5))
-            print("---")
-    except e:
-        print("Error querying data: ", e)
-        conn^.close()
-        return
+    stmt = db.prepare("SELECT * FROM COMPANY;")
+    for row in stmt.query():
+        print("Row ID:", row.get[Int](0))
+        print("Name:", row.get[String](1))
+        print("Age:", row.get[Int](2))
+        print("Salary:", row.get[Float64](4))
+        print("Active:", row.get[Bool](5))
+        print("---")
 
     fn transform_row(row: Row) -> Employee:
         try:
@@ -105,13 +84,8 @@ fn main() raises:
                 is_active=False
             )
 
-    try:
-        var stmt = conn.prepare(select_query)
-        for row in stmt.query_map[transform=transform_row]():
-            print(row)
-    except e:
-        print("Error querying data: ", e)
-        conn^.close()
-        return
+    stmt = db.prepare("SELECT * FROM COMPANY;")
+    for row in stmt.query_map[transform=transform_row]():
+        print(row)
 
-    conn^.close()
+    db^.close()

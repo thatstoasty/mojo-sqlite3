@@ -370,6 +370,52 @@ fn readonly() raises:
     var stmt = db.prepare("SELECT 1;")
     assert_true(stmt.is_read_only())
 
+fn test_column_name_in_error() raises:
+    var db = Connection.open_in_memory()
+    db.execute_batch("""BEGIN;
+        CREATE TABLE foo(x INTEGER, y TEXT);
+        INSERT INTO foo VALUES(4, NULL);
+        END;""")
+    
+    fn get_string_from_x(r: Row) raises -> String:
+        return r.get[String](0)
+    
+    fn get_string_from_y(r: Row) raises -> String:
+        return r.get[String]("y")
+    
+    var stmt = db.prepare("SELECT x as renamed, y FROM foo")
+    var rows = stmt.query()
+    
+    for row in rows:
+        # Test getting integer column as string (should fail)
+        with assert_raises(contains="InvalidColumnType"):
+            _ = row.get[String](0)
+        
+        # Test getting NULL column as string (should fail)
+        with assert_raises(contains="InvalidColumnType"):
+            _ = row.get[String]("y")
+        
+        break  # Only test first row
+
+
+fn test_column_name_reference() raises:
+    """The `column_name` reference should stay valid until `stmt` is reprepared (or
+    reset) even if DB schema is altered (SQLite documentation is
+    ambiguous here because it says reference "is valid until (...) the next
+    call to `sqlite3_column_name()` or `sqlite3_column_name16()` on the same
+    column.". We assume that reference is valid if only
+    `sqlite3_column_name()` is used)."""
+    var db = Connection.open_in_memory()
+    db.execute_batch("CREATE TABLE y (x);")
+    var stmt = db.prepare("SELECT x FROM y;")
+    var column_name = stmt.column_name(0)
+    assert_equal(column_name, "x")
+    
+    db.execute_batch("ALTER TABLE y RENAME COLUMN x TO z;")
+    # column name is not refreshed until statement is re-prepared
+    var same_column_name = stmt.column_name(0)
+    assert_equal(same_column_name, column_name)
+
 
 # fn test_error_offset() raises:
 #     # This would be conditional on modern_sqlite feature

@@ -331,15 +331,54 @@ struct sqlite3:
         return self.lib.sqlite3_busy_handler(db, callback, arg)
 
     fn busy_timeout(self, db: ExternalMutPointer[sqlite3_connection], ms: c_int) -> SQLite3Result:
+        """Set A Busy Timeout.
+
+        This routine sets a busy handler that sleeps for a specified amount of time
+        when a table is locked.
+
+        Args:
+            db: Database connection.
+            ms: Timeout in milliseconds.
+
+        Returns:
+            Result code (SQLITE_OK on success).
+        """
         return self.lib.sqlite3_busy_timeout(db, ms)
 
     fn malloc64(self, size: UInt64) -> ExternalMutPointer[NoneType]:
+        """Allocate Memory (64-bit).
+
+        This routine allocates memory using SQLite's memory allocation subsystem.
+
+        Args:
+            size: Number of bytes to allocate.
+
+        Returns:
+            Pointer to allocated memory or NULL on failure.
+        """
         return self.lib.sqlite3_malloc64(size)
 
     fn free[origin: MutOrigin](self, ptr: OpaqueMutPointer[origin]):
+        """Free Memory.
+
+        This routine frees memory that was obtained from malloc64.
+
+        Args:
+            ptr: Pointer to memory to free.
+        """
         self.lib.sqlite3_free(ptr)
 
     fn msize[origin: MutOrigin](self, ptr: OpaqueMutPointer[origin]) -> UInt64:
+        """Memory Size.
+
+        This routine returns the size of a memory allocation obtained from malloc64.
+
+        Args:
+            ptr: Pointer to allocated memory.
+
+        Returns:
+            Size of the allocation in bytes.
+        """
         return self.lib.sqlite3_msize(ptr)
 
     fn set_authorizer[
@@ -350,6 +389,19 @@ struct sqlite3:
         db: ExternalMutPointer[sqlite3_connection],
         pUserData: OpaqueMutPointer[userdata_origin],
     ) -> SQLite3Result:
+        """Register An Authorizer Callback.
+
+        This routine registers a callback function to be invoked by SQLite whenever
+        it tries to access a database or perform certain operations. The callback
+        can approve, deny, or ignore the action.
+
+        Args:
+            db: Database connection.
+            pUserData: User data pointer passed to the callback.
+
+        Returns:
+            Result code (SQLITE_OK on success).
+        """
         return self.lib.sqlite3_set_authorizer[origin, origin2, origin3, origin4, origin5, auth_callback](db, pUserData)
 
     fn trace[
@@ -362,6 +414,19 @@ struct sqlite3:
         xTrace: fn (OpaqueMutPointer[origin], UnsafeImmutPointer[c_char, origin2]) -> NoneType,
         pArg: OpaqueMutPointer[arg_origin],
     ) -> ExternalMutPointer[NoneType]:
+        """Register A Trace Callback (Deprecated).
+
+        This routine registers a callback function to be invoked for each SQL
+        statement as it is executed. This function is deprecated - use trace_v2 instead.
+
+        Args:
+            db: Database connection.
+            xTrace: Callback function invoked for each SQL statement.
+            pArg: User data pointer passed to callback.
+
+        Returns:
+            Pointer to the previous trace callback data.
+        """
         return self.lib.sqlite3_trace(db, xTrace, pArg)
 
     fn profile[
@@ -372,6 +437,20 @@ struct sqlite3:
         xProfile: fn (OpaqueMutPointer[origin], UnsafeImmutPointer[c_char, origin2], UInt64) -> NoneType,
         pArg: OpaqueMutPointer[arg_origin],
     ) -> ExternalMutPointer[NoneType]:
+        """Register A Profile Callback (Deprecated).
+
+        This routine registers a callback function to be invoked when each SQL
+        statement finishes, providing execution time information. This function
+        is deprecated - use trace_v2 instead.
+
+        Args:
+            db: Database connection.
+            xProfile: Callback function invoked when statements finish.
+            pArg: User data pointer passed to callback.
+
+        Returns:
+            Pointer to the previous profile callback data.
+        """
         return self.lib.sqlite3_profile(db, xProfile, pArg)
 
     fn trace_v2[
@@ -383,6 +462,20 @@ struct sqlite3:
         xCallback: fn (UInt32, OpaqueMutPointer[origin], OpaqueMutPointer[origin2], OpaqueMutPointer[origin3]) -> c_int,
         pCtx: OpaqueMutPointer[ctx_origin],
     ) -> SQLite3Result:
+        """Register A Trace Callback (Version 2).
+
+        This routine registers a callback function to be invoked for various
+        tracing events based on the mask parameter.
+
+        Args:
+            db: Database connection.
+            uMask: Bitmask of trace events to monitor.
+            xCallback: Callback function invoked for trace events.
+            pCtx: User data pointer passed to callback.
+
+        Returns:
+            Result code (SQLITE_OK on success).
+        """
         return self.lib.sqlite3_trace_v2(db, uMask, xCallback, pCtx)
 
     fn progress_handler[
@@ -394,6 +487,18 @@ struct sqlite3:
         xProgress: fn (OpaqueMutPointer[origin]) -> c_int,
         pArg: OpaqueMutPointer[arg_origin],
     ):
+        """Register A Progress Callback.
+
+        This routine registers a callback function to be invoked periodically
+        during long-running operations. The callback can be used to provide
+        progress feedback or to interrupt the operation.
+
+        Args:
+            db: Database connection.
+            nOps: Number of virtual machine instructions between callbacks.
+            xProgress: Callback function invoked periodically.
+            pArg: User data pointer passed to callback.
+        """
         self.lib.sqlite3_progress_handler(db, nOps, xProgress, pArg)
 
     fn open_v2(
@@ -582,7 +687,6 @@ struct sqlite3:
         """
         return self.lib.sqlite3_prepare_v2(db, zSql.unsafe_cstr_ptr(), nByte, UnsafePointerV2(to=ppStmt), UnsafePointerV2(to=pzTail))
 
-    # TODO: When unsafe_cstr_ptr returns an UnsafePointerV2, update pzTail type
     fn prepare_v3[
         sql: ImmutOrigin, tail: MutOrigin
     ](
@@ -592,7 +696,7 @@ struct sqlite3:
         nByte: c_int,
         prepFlags: UInt32,
         mut ppStmt: ExternalMutPointer[sqlite3_stmt],
-        pzTail: UnsafeMutPointer[UnsafePointer[c_char, mut=False, origin=sql], tail],
+        pzTail: UnsafeMutPointer[UnsafeImmutPointer[c_char, origin=sql], tail],
     ) -> SQLite3Result:
         return self.lib.sqlite3_prepare_v3(db, zSql, nByte, prepFlags, UnsafePointerV2(to=ppStmt), pzTail)
 
@@ -837,7 +941,7 @@ struct sqlite3:
         """
         return self.lib.sqlite3_bind_parameter_count(pStmt)
 
-    fn bind_parameter_name(self, pStmt: ExternalMutPointer[sqlite3_stmt], idx: c_int) -> StringSlice[ImmutableAnyOrigin]:
+    fn bind_parameter_name(self, pStmt: ExternalMutPointer[sqlite3_stmt], idx: c_int) -> Optional[StringSlice[ImmutableAnyOrigin]]:
         """Get the name of a parameter in a prepared statement.
 
         This function returns the name of the N-th SQL parameter in the prepared
@@ -853,7 +957,10 @@ struct sqlite3:
         Returns:
             The name of the parameter, or empty string if it has no name.
         """
-        return StringSlice(unsafe_from_utf8_ptr=self.lib.sqlite3_bind_parameter_name(pStmt, idx))
+        var ptr = self.lib.sqlite3_bind_parameter_name(pStmt, idx)
+        if not ptr:
+            return None
+        return StringSlice(unsafe_from_utf8_ptr=ptr).get_immutable()
 
     fn bind_parameter_index(self, pStmt: ExternalMutPointer[sqlite3_stmt], mut zName: String) -> c_int:
         """Get the index of a named parameter.
@@ -1179,6 +1286,7 @@ struct sqlite3:
         """
         return self.lib.sqlite3_reset(pStmt)
 
+    # TODO: Create scalar and aggregate function variants since they require null function pointers.
     fn create_function_v2[
         app_origin: MutOrigin,
         fn_origin: MutOrigin,
@@ -1231,7 +1339,7 @@ struct sqlite3:
         ](
             db, zFunctionName.unsafe_cstr_ptr(), nArg, eTextRep, pApp, xFunc, xStep, xFinal, destructor_callback
         )
-
+    
     fn create_window_function[
         app_origin: MutOrigin,
         step_origin: MutOrigin,
@@ -1927,7 +2035,7 @@ struct sqlite3:
         self,
         db: ExternalMutPointer[sqlite3_connection],
         mut zFile: String,
-        mut zProc: String,
+        var zProc: Optional[String],
         pzErrMsg: UnsafeMutPointer[c_char, origin],
     ) -> SQLite3Result:
         """Load An Extension.
@@ -1943,7 +2051,8 @@ struct sqlite3:
         Returns:
             Result code (SQLITE_OK on success).
         """
-        return self.lib.sqlite3_load_extension(db, zFile.unsafe_cstr_ptr(), zProc.unsafe_cstr_ptr(), UnsafePointerV2(to=pzErrMsg))
+        var proc_ptr = zProc.value().unsafe_cstr_ptr() if zProc else ExternalImmutPointer[Int8]()
+        return self.lib.sqlite3_load_extension(db, zFile.unsafe_cstr_ptr(), proc_ptr, UnsafePointerV2(to=pzErrMsg))
 
     fn enable_load_extension(self, db: ExternalMutPointer[sqlite3_connection], onoff: c_int) -> SQLite3Result:
         """Enable Or Disable Extension Loading.
@@ -2493,7 +2602,7 @@ struct sqlite3:
         return self.lib.sqlite3_wal_autocheckpoint(db, N)
 
     fn wal_checkpoint(
-        self, db: ExternalMutPointer[sqlite3_connection], mut zDb: String
+        self, db: ExternalMutPointer[sqlite3_connection], var zDb: Optional[String]
     ) -> SQLite3Result:
         """Checkpoint A Database.
 
@@ -2506,12 +2615,13 @@ struct sqlite3:
         Returns:
             Result code (SQLITE_OK on success).
         """
-        return self.lib.sqlite3_wal_checkpoint(db, zDb.unsafe_cstr_ptr())
+        var db_ptr = zDb.value().unsafe_cstr_ptr() if zDb else ExternalImmutPointer[Int8]()
+        return self.lib.sqlite3_wal_checkpoint(db, db_ptr)
 
     fn wal_checkpoint_v2(
         self,
         db: ExternalMutPointer[sqlite3_connection],
-        mut zDb: String,
+        var zDb: Optional[String],
         eMode: c_int,
         pnLog: UnsafeMutPointer[c_int],
         pnCkpt: UnsafeMutPointer[c_int],
@@ -2531,7 +2641,8 @@ struct sqlite3:
         Returns:
             Result code (SQLITE_OK on success).
         """
-        return self.lib.sqlite3_wal_checkpoint_v2(db, zDb.unsafe_cstr_ptr(), eMode, pnLog, pnCkpt)
+        var db_ptr = zDb.value().unsafe_cstr_ptr() if zDb else ExternalImmutPointer[Int8]()
+        return self.lib.sqlite3_wal_checkpoint_v2(db, db_ptr, eMode, pnLog, pnCkpt)
 
     fn vtab_config(self, db: ExternalMutPointer[sqlite3_connection], op: c_int) -> SQLite3Result:
         """Configure Virtual Table Behavior.
