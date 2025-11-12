@@ -1,12 +1,13 @@
 from sys.ffi import c_char
 from slight.c.api import get_sqlite3_handle
+from slight.c.types import ExternalMutPointer
 
 
 @fieldwise_init
 struct SQLiteMallocString(Copyable, Movable):
     """A string we own that's allocated on the SQLite heap. Automatically calls `sqlite3_free` when deleted."""
 
-    var ptr: ExternalImmutPointer[c_char]
+    var ptr: ExternalMutPointer[c_char]
     """A pointer to the C string allocated by SQLite."""
 
     fn __del__(deinit self):

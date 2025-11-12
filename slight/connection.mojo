@@ -110,7 +110,7 @@ struct Connection(Movable):
         """
         self.db = other^.take_connection()
         other = Connection()
-    
+
     fn __del__(deinit self):
         """Closes the connection when it is deleted."""
         if self.db:
@@ -141,7 +141,7 @@ struct Connection(Movable):
         """
         self.db.raise_if_error(code)
 
-    fn error_msg(self, code: SQLite3Result) -> Optional[StringSlice[ImmutableAnyOrigin]]:
+    fn error_msg(self, code: SQLite3Result) -> Optional[StringSlice[ImmutAnyOrigin]]:
         """Checks for the error message set in sqlite3, or what the description of the provided code is.
 
         Args:
@@ -272,9 +272,7 @@ struct Connection(Movable):
             _ = stmt.finalize()
 
     fn query_row[
-        T: Copyable & Movable,
-        //,
-        transform: fn (Row) raises -> T
+        T: Copyable & Movable, //, transform: fn (Row) raises -> T
     ](mut self, var sql: String, params: List[Parameter] = []) raises -> T:
         """Executes the query and returns a single row.
 

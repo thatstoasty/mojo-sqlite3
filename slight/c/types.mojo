@@ -3,6 +3,10 @@ from utils import StaticTuple
 
 from sys.ffi import c_char, c_int
 
+alias ExternalImmutPointer = UnsafeImmutPointer[origin = ImmutOrigin.external]
+alias ExternalImmutOpaquePointer = ExternalImmutPointer[NoneType]
+alias ExternalMutPointer = UnsafeMutPointer[origin = MutOrigin.external]
+alias ExternalMutOpaquePointer = ExternalMutPointer[NoneType]
 
 alias SQLITE_INTEGER: Int32 = 1
 alias SQLITE_FLOAT: Int32 = 2
@@ -31,7 +35,6 @@ struct sqlite3_connection(Movable):
     sqlite3 object."""
 
     pass
-
 
 
 struct sqlite3_file(Movable):
@@ -87,7 +90,6 @@ alias SQLITE_STATIC = 0
 alias SQLITE_TRANSIENT = -1
 
 
-
 struct sqlite3_backup(Movable):
     """Online Backup Object.
 
@@ -99,7 +101,6 @@ struct sqlite3_backup(Movable):
     See Also: [Using the SQLite Online Backup API]"""
 
     pass
-
 
 
 struct sqlite3_snapshot(Movable):
@@ -148,7 +149,6 @@ struct sqlite3_stmt(Movable):
     pass
 
 
-
 struct sqlite3_value(Movable):
     """Dynamically Typed Value Object.
     SQLite uses the sqlite3_value object to represent all values
@@ -187,7 +187,6 @@ struct sqlite3_value(Movable):
     interfaces require protected sqlite3_value objects."""
 
     pass
-
 
 
 struct sqlite3_context(Movable):
@@ -304,7 +303,6 @@ struct sqlite3_index_info(Movable):
     var estimatedRows: Int64
     var idxFlags: Int32
     var colUsed: UInt64
-
 
 
 struct sqlite3_vtab(Movable):

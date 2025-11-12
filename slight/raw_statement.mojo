@@ -1,6 +1,6 @@
 from slight.c.api import get_sqlite3_handle
 from slight.result import SQLite3Result
-from slight.c.types import sqlite3_stmt, ResultDestructorFn, SQLITE_UTF8
+from slight.c.types import sqlite3_stmt, ResultDestructorFn, SQLITE_UTF8, ExternalMutPointer
 from slight.c.sqlite_string import SQLiteMallocString
 
 
@@ -50,7 +50,7 @@ struct RawStatement(Boolable, Movable):
         """
         return get_sqlite3_handle()[].column_double(self.stmt, Int32(idx))
 
-    fn column_text(self, idx: UInt) raises -> StringSlice[ImmutableAnyOrigin]:
+    fn column_text(self, idx: UInt) raises -> StringSlice[ImmutAnyOrigin]:
         """Returns the value of the specified column as a text string.
 
         Args:
@@ -173,7 +173,7 @@ struct RawStatement(Boolable, Movable):
             self.stmt, Int32(index), value, len(value), SQLITE_UTF8, destructor_callback
         )
 
-    fn sql(self) -> Optional[StringSlice[ImmutableAnyOrigin]]:
+    fn sql(self) -> Optional[StringSlice[ImmutAnyOrigin]]:
         """Returns the original SQL text of the prepared statement.
 
         Returns:
@@ -252,7 +252,7 @@ struct RawStatement(Boolable, Movable):
         """
         return get_sqlite3_handle()[].clear_bindings(self.stmt)
 
-    fn column_name(self, idx: UInt) -> Optional[StringSlice[ImmutableAnyOrigin]]:
+    fn column_name(self, idx: UInt) -> Optional[StringSlice[ImmutAnyOrigin]]:
         """Returns the name of the specified column.
 
         Args:

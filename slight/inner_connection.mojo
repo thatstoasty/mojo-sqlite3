@@ -8,6 +8,7 @@ from slight.c.raw_bindings import (
     sqlite3_connection,
     sqlite3_stmt,
 )
+from slight.c.types import ExternalMutPointer
 from slight.flags import PrepFlag, OpenFlag
 from slight.result import SQLite3Result
 from slight.error import error_msg, raise_if_error, decode_error
@@ -33,9 +34,7 @@ struct InnerConnection(Movable):
             Will return an `Error` if the underlying SQLite open call fails.
         """
         self.db = ExternalMutPointer[sqlite3_connection]()
-        var result = get_sqlite3_handle()[].open_v2(
-            path, UnsafePointerV2(to=self.db), flags.value, None
-        )
+        var result = get_sqlite3_handle()[].open_v2(path, UnsafePointer(to=self.db), flags.value, None)
         if result != SQLite3Result.SQLITE_OK:
             raise Error("Could not open database: ", materialize[RESULT_MESSAGES]()[result.value])
 
@@ -161,8 +160,8 @@ struct InnerConnection(Movable):
             Will return an `Error` if the underlying SQLite prepare call fails.
         """
         var stmt = ExternalMutPointer[sqlite3_stmt]()
-        var str = UnsafePointerV2(sql.unsafe_cstr_ptr())
-        var c_tail = UnsafePointerV2(to=str)
+        var str = UnsafePointer(sql.unsafe_cstr_ptr())
+        var c_tail = UnsafePointer(to=str)
 
         try:
             self.raise_if_error(
@@ -228,7 +227,7 @@ struct InnerConnection(Movable):
         """
         raise_if_error(self.db, code)
 
-    fn error_msg(self, code: SQLite3Result) -> Optional[StringSlice[ImmutableAnyOrigin]]:
+    fn error_msg(self, code: SQLite3Result) -> Optional[StringSlice[ImmutAnyOrigin]]:
         """Checks for the error message set in sqlite3, or what the description of the provided code is.
 
         Args:

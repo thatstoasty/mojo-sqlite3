@@ -245,13 +245,7 @@ struct Rows[conn: ImmutOrigin, statement: ImmutOrigin](Copyable, Iterator, Movab
             # raise
 
 
-struct MappedRows[
-    T: Copyable & Movable,
-    //,
-    conn: ImmutOrigin,
-    statement: ImmutOrigin,
-    transform: fn (Row) -> T
-](
+struct MappedRows[T: Copyable & Movable, //, conn: ImmutOrigin, statement: ImmutOrigin, transform: fn (Row) -> T](
     Copyable, Iterator, Movable
 ):
     """An iterator that transforms rows using a mapping function."""

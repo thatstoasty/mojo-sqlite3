@@ -10,6 +10,7 @@ from slight.c.types import (
     SQLITE_TEXT,
     SQLITE_TRANSIENT,
     ResultDestructorFn,
+    ExternalMutPointer,
 )
 from slight.connection import Connection
 from slight.params import Parameter
@@ -338,7 +339,7 @@ struct Statement[conn: ImmutOrigin](Movable):
         if parameter.isa[NoneType]():
             self.bind_null(index)
         elif parameter.isa[String]():
-            var des = UnsafePointerV2(to=SQLITE_TRANSIENT).bitcast[ResultDestructorFn]()
+            var des = UnsafePointer(to=SQLITE_TRANSIENT).bitcast[ResultDestructorFn]()
             self.bind_text(index, parameter[String], des[])
         elif parameter.isa[Int]():
             self.bind_int64(index, Int64(parameter[Int]))
@@ -481,11 +482,7 @@ struct Statement[conn: ImmutOrigin](Movable):
 
     fn query_map[
         T: Copyable & Movable, //, transform: fn (Row) -> T
-    ](mut self, params: List[Parameter] = []) raises -> MappedRows[
-        conn,
-        origin_of(self),
-        transform
-    ]:
+    ](mut self, params: List[Parameter] = []) raises -> MappedRows[conn, origin_of(self), transform]:
         """Executes the query and returns a mapped iterator that transforms each row.
 
         This method applies a transformation function to each row returned by the query,
@@ -607,9 +604,7 @@ struct Statement[conn: ImmutOrigin](Movable):
         return transform(rows.__next__())
 
     fn query_row[
-        T: Copyable & Movable,
-        //,
-        transform: fn (Row) raises -> T
+        T: Copyable & Movable, //, transform: fn (Row) raises -> T
     ](mut self, params: List[Tuple[String, Parameter]]) raises -> T:
         """Executes the query and returns a single row.
 
@@ -700,7 +695,7 @@ struct Statement[conn: ImmutOrigin](Movable):
         """
         self.connection[].raise_if_error(self.stmt.clear_bindings())
 
-    fn sql(self) -> Optional[StringSlice[ImmutableAnyOrigin]]:
+    fn sql(self) -> Optional[StringSlice[ImmutAnyOrigin]]:
         """Returns the original SQL text of the prepared statement.
 
         Returns:
@@ -723,7 +718,7 @@ struct Statement[conn: ImmutOrigin](Movable):
 
         return String(sql.value().as_string_slice())
 
-    fn column_name(self, idx: UInt) raises -> StringSlice[ImmutableAnyOrigin]:
+    fn column_name(self, idx: UInt) raises -> StringSlice[ImmutAnyOrigin]:
         """Returns the name of the column at the specified index.
 
         Args:
@@ -834,7 +829,7 @@ struct Statement[conn: ImmutOrigin](Movable):
         """Returns whether the prepared statement is read-only."""
         return self.stmt.is_read_only()
 
-    fn column_names(self) raises -> List[StringSlice[ImmutableAnyOrigin]]:
+    fn column_names(self) raises -> List[StringSlice[ImmutAnyOrigin]]:
         """Get all the column names in the result set of the prepared statement.
 
         If associated DB schema can be altered concurrently, you should make
@@ -848,7 +843,7 @@ struct Statement[conn: ImmutOrigin](Movable):
             Error: If a column index is out of bounds.
         """
         var n = self.column_count()
-        var cols = List[StringSlice[ImmutableAnyOrigin]](capacity=Int(n))
+        var cols = List[StringSlice[ImmutAnyOrigin]](capacity=Int(n))
         for i in range(n):
             cols.append(self.column_name(UInt(i)))
         return cols^
