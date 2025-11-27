@@ -10,7 +10,7 @@ from slight.c.types import (
     SQLITE_TEXT,
     SQLITE_TRANSIENT,
     ResultDestructorFn,
-    ExternalMutPointer,
+    MutExternalPointer,
 )
 from slight.connection import Connection
 from slight.params import Parameter
@@ -74,7 +74,7 @@ struct Statement[conn: ImmutOrigin](Movable):
         self.connection = connection
         self.stmt = stmt^
 
-    fn __init__(out self, connection: Pointer[Connection, conn], stmt: ExternalMutPointer[sqlite3_stmt]):
+    fn __init__(out self, connection: Pointer[Connection, conn], stmt: MutExternalPointer[sqlite3_stmt]):
         """Initializes a new Statement with the given connection and raw statement pointer.
 
         Args:
@@ -695,7 +695,7 @@ struct Statement[conn: ImmutOrigin](Movable):
         """
         self.connection[].raise_if_error(self.stmt.clear_bindings())
 
-    fn sql(self) -> Optional[StringSlice[ImmutAnyOrigin]]:
+    fn sql(self) -> Optional[StringSlice[origin_of(ImmutOrigin.external)]]:
         """Returns the original SQL text of the prepared statement.
 
         Returns:
@@ -718,7 +718,7 @@ struct Statement[conn: ImmutOrigin](Movable):
 
         return String(sql.value().as_string_slice())
 
-    fn column_name(self, idx: UInt) raises -> StringSlice[ImmutAnyOrigin]:
+    fn column_name(self, idx: UInt) raises -> StringSlice[origin_of(ImmutOrigin.external)]:
         """Returns the name of the column at the specified index.
 
         Args:
@@ -829,7 +829,7 @@ struct Statement[conn: ImmutOrigin](Movable):
         """Returns whether the prepared statement is read-only."""
         return self.stmt.is_read_only()
 
-    fn column_names(self) raises -> List[StringSlice[ImmutAnyOrigin]]:
+    fn column_names(self) raises -> List[StringSlice[origin_of(ImmutOrigin.external)]]:
         """Get all the column names in the result set of the prepared statement.
 
         If associated DB schema can be altered concurrently, you should make
@@ -843,7 +843,7 @@ struct Statement[conn: ImmutOrigin](Movable):
             Error: If a column index is out of bounds.
         """
         var n = self.column_count()
-        var cols = List[StringSlice[ImmutAnyOrigin]](capacity=Int(n))
+        var cols = List[StringSlice[origin_of(ImmutOrigin.external)]](capacity=Int(n))
         for i in range(n):
             cols.append(self.column_name(UInt(i)))
         return cols^

@@ -42,8 +42,8 @@ fn test_eq_ignore_ascii_case_test() raises:
 
 
 fn test_path() raises:
-    var db = Connection.open_in_memory()
-    assert_equal(db.path().value(), "")
+    with Connection.open_in_memory() as db:
+        assert_equal(db.path().value(), "")
 
 
     db = Connection.open("file:dummy.db?mode=memory&cache=shared")
@@ -560,5 +560,4 @@ fn test_alter_table() raises:
 
 
 fn main() raises:
-    var suite = TestSuite.discover_tests[__functions_in_module()]()
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

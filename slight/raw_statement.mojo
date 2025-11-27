@@ -1,6 +1,6 @@
 from slight.c.api import get_sqlite3_handle
 from slight.result import SQLite3Result
-from slight.c.types import sqlite3_stmt, ResultDestructorFn, SQLITE_UTF8, ExternalMutPointer
+from slight.c.types import sqlite3_stmt, ResultDestructorFn, SQLITE_UTF8, MutExternalPointer
 from slight.c.sqlite_string import SQLiteMallocString
 
 
@@ -8,7 +8,7 @@ from slight.c.sqlite_string import SQLiteMallocString
 struct RawStatement(Boolable, Movable):
     """A raw SQL statement wrapper around a pointer to a `sqlite3_stmt`."""
 
-    var stmt: ExternalMutPointer[sqlite3_stmt]
+    var stmt: MutExternalPointer[sqlite3_stmt]
     """A pointer to the `sqlite3_stmt` that represents this statement."""
 
     fn __init__(out self):
@@ -17,7 +17,7 @@ struct RawStatement(Boolable, Movable):
         Returns:
             A new `RawStatement` instance with a null pointer.
         """
-        self.stmt = ExternalMutPointer[sqlite3_stmt]()
+        self.stmt = MutExternalPointer[sqlite3_stmt]()
 
     fn __bool__(self) -> Bool:
         """Returns True if the statement is valid (i.e., the stmt pointer is not null)."""
@@ -50,7 +50,7 @@ struct RawStatement(Boolable, Movable):
         """
         return get_sqlite3_handle()[].column_double(self.stmt, Int32(idx))
 
-    fn column_text(self, idx: UInt) raises -> StringSlice[ImmutAnyOrigin]:
+    fn column_text(self, idx: UInt) raises -> StringSlice[origin_of(ImmutOrigin.external)]:
         """Returns the value of the specified column as a text string.
 
         Args:
@@ -68,7 +68,7 @@ struct RawStatement(Boolable, Movable):
 
         return StringSlice(unsafe_from_utf8_ptr=ptr)
 
-    fn column_blob(self, idx: UInt) raises -> Span[Byte, origin_of(self)]:
+    fn column_blob(self, idx: UInt) raises -> Span[Byte, origin_of(ImmutOrigin.external)]:
         """Returns the value of the specified column as binary data.
 
         Args:
@@ -88,7 +88,7 @@ struct RawStatement(Boolable, Movable):
         if length < 0:
             raise Error("unexpected SQLITE_BLOB column type with negative length: ", length)
 
-        return Span[Byte, origin_of(self)](
+        return Span[Byte, origin_of(ImmutOrigin.external)](
             ptr=ptr,
             length=Int(length),
         )
@@ -173,7 +173,7 @@ struct RawStatement(Boolable, Movable):
             self.stmt, Int32(index), value, len(value), SQLITE_UTF8, destructor_callback
         )
 
-    fn sql(self) -> Optional[StringSlice[ImmutAnyOrigin]]:
+    fn sql(self) -> Optional[StringSlice[origin_of(ImmutOrigin.external)]]:
         """Returns the original SQL text of the prepared statement.
 
         Returns:
@@ -209,7 +209,7 @@ struct RawStatement(Boolable, Movable):
             The SQLite result code from finalizing the statement.
         """
         var old_stmt = self.stmt
-        self.stmt = ExternalMutPointer[sqlite3_stmt]()
+        self.stmt = MutExternalPointer[sqlite3_stmt]()
 
         return get_sqlite3_handle()[].finalize(old_stmt)
 
@@ -252,7 +252,7 @@ struct RawStatement(Boolable, Movable):
         """
         return get_sqlite3_handle()[].clear_bindings(self.stmt)
 
-    fn column_name(self, idx: UInt) -> Optional[StringSlice[ImmutAnyOrigin]]:
+    fn column_name(self, idx: UInt) -> Optional[StringSlice[origin_of(ImmutOrigin.external)]]:
         """Returns the name of the specified column.
 
         Args:

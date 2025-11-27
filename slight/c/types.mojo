@@ -3,10 +3,10 @@ from utils import StaticTuple
 
 from sys.ffi import c_char, c_int
 
-alias ExternalImmutPointer = UnsafeImmutPointer[origin = ImmutOrigin.external]
-alias ExternalImmutOpaquePointer = ExternalImmutPointer[NoneType]
-alias ExternalMutPointer = UnsafeMutPointer[origin = MutOrigin.external]
-alias ExternalMutOpaquePointer = ExternalMutPointer[NoneType]
+alias ImmutExternalPointer = ImmutUnsafePointer[origin = ImmutOrigin.external]
+alias ImmutExternalOpaquePointer = ImmutExternalPointer[NoneType]
+alias MutExternalPointer = MutUnsafePointer[origin = MutOrigin.external]
+alias MutExternalOpaquePointer = MutExternalPointer[NoneType]
 
 alias SQLITE_INTEGER: Int32 = 1
 alias SQLITE_FLOAT: Int32 = 2
@@ -52,7 +52,7 @@ struct sqlite3_file(Movable):
     pass
 
 
-alias ResultDestructorFn = fn (ExternalMutPointer[NoneType]) -> NoneType
+alias ResultDestructorFn = fn (MutExternalPointer[NoneType]) -> NoneType
 """Constants Defining Special Destructor Behavior
 These are special values for the destructor that is passed in as the
 final argument to routines like [sqlite3_result_blob()].  ^If the destructor
@@ -65,21 +65,21 @@ The typedef is necessary to work around problems in certain
 C++ compilers."""
 
 alias ExecCallbackFn = fn[argv_origin: MutOrigin, col_name_origin: MutOrigin] (
-    data: OpaqueMutPointer,
+    data: MutOpaquePointer,
     argc: Int32,
-    argv: UnsafeMutPointer[UnsafeMutPointer[c_char, argv_origin]],
-    azColName: UnsafeMutPointer[UnsafeMutPointer[c_char, col_name_origin]],
+    argv: MutUnsafePointer[MutUnsafePointer[c_char, argv_origin]],
+    azColName: MutUnsafePointer[MutUnsafePointer[c_char, col_name_origin]],
 ) -> c_int
 
 alias AuthCallbackFn = fn[
     origin: MutOrigin, origin2: ImmutOrigin, origin3: ImmutOrigin, origin4: ImmutOrigin, origin5: ImmutOrigin
 ] (
-    OpaqueMutPointer[origin],
+    MutOpaquePointer[origin],
     c_int,
-    UnsafeImmutPointer[c_char, origin2],
-    UnsafeImmutPointer[c_char, origin3],
-    UnsafeImmutPointer[c_char, origin4],
-    UnsafeImmutPointer[c_char, origin5],
+    ImmutUnsafePointer[c_char, origin2],
+    ImmutUnsafePointer[c_char, origin3],
+    ImmutUnsafePointer[c_char, origin4],
+    ImmutUnsafePointer[c_char, origin5],
 ) -> c_int
 
 
@@ -206,69 +206,69 @@ struct sqlite3_context(Movable):
 struct sqlite3_module(Movable):
     var iVersion: Int32
     var xCreate: fn (
-        ExternalPointer[sqlite3_connection],
+        MutExternalPointer[sqlite3_connection],
         OpaquePointer,
         Int32,
-        ExternalPointer[ExternalPointer[Int8]],
-        ExternalPointer[ExternalPointer[sqlite3_vtab]],
-        ExternalPointer[ExternalPointer[Int8]],
+        MutExternalPointer[MutExternalPointer[Int8]],
+        MutExternalPointer[MutExternalPointer[sqlite3_vtab]],
+        MutExternalPointer[MutExternalPointer[Int8]],
     ) -> Int32  # FieldDeclNode: This is a const param, but shouldn't be assigned as an alias since it doesn't have a value.
     var xConnect: fn (
-        ExternalPointer[sqlite3_connection],
+        MutExternalPointer[sqlite3_connection],
         OpaquePointer,
         Int32,
-        ExternalPointer[ExternalPointer[Int8]],
-        ExternalPointer[ExternalPointer[sqlite3_vtab]],
-        ExternalPointer[ExternalPointer[Int8]],
+        MutExternalPointer[MutExternalPointer[Int8]],
+        MutExternalPointer[MutExternalPointer[sqlite3_vtab]],
+        MutExternalPointer[MutExternalPointer[Int8]],
     ) -> Int32  # FieldDeclNode: This is a const param, but shouldn't be assigned as an alias since it doesn't have a value.
-    var xBestIndex: fn (ExternalPointer[sqlite3_vtab], ExternalPointer[sqlite3_index_info]) -> Int32
-    var xDisconnect: fn (ExternalPointer[sqlite3_vtab]) -> Int32
-    var xDestroy: fn (ExternalPointer[sqlite3_vtab]) -> Int32
-    var xOpen: fn (ExternalPointer[sqlite3_vtab], ExternalPointer[ExternalPointer[sqlite3_vtab_cursor]]) -> Int32
-    var xClose: fn (ExternalPointer[sqlite3_vtab_cursor]) -> Int32
+    var xBestIndex: fn (MutExternalPointer[sqlite3_vtab], MutExternalPointer[sqlite3_index_info]) -> Int32
+    var xDisconnect: fn (MutExternalPointer[sqlite3_vtab]) -> Int32
+    var xDestroy: fn (MutExternalPointer[sqlite3_vtab]) -> Int32
+    var xOpen: fn (MutExternalPointer[sqlite3_vtab], MutExternalPointer[MutExternalPointer[sqlite3_vtab_cursor]]) -> Int32
+    var xClose: fn (MutExternalPointer[sqlite3_vtab_cursor]) -> Int32
     var xFilter: fn (
-        ExternalPointer[sqlite3_vtab_cursor],
+        MutExternalPointer[sqlite3_vtab_cursor],
         Int32,
-        ExternalPointer[Int8],
+        MutExternalPointer[Int8],
         Int32,
-        ExternalPointer[ExternalPointer[sqlite3_value]],
+        MutExternalPointer[MutExternalPointer[sqlite3_value]],
     ) -> Int32  # FieldDeclNode: This is a const param, but shouldn't be assigned as an alias since it doesn't have a value.
-    var xNext: fn (ExternalPointer[sqlite3_vtab_cursor]) -> Int32
-    var xEof: fn (ExternalPointer[sqlite3_vtab_cursor]) -> Int32
-    var xColumn: fn (ExternalPointer[sqlite3_vtab_cursor], ExternalPointer[sqlite3_context], Int32) -> Int32
-    var xRowid: fn (ExternalPointer[sqlite3_vtab_cursor], ExternalPointer[Int64]) -> Int32
+    var xNext: fn (MutExternalPointer[sqlite3_vtab_cursor]) -> Int32
+    var xEof: fn (MutExternalPointer[sqlite3_vtab_cursor]) -> Int32
+    var xColumn: fn (MutExternalPointer[sqlite3_vtab_cursor], MutExternalPointer[sqlite3_context], Int32) -> Int32
+    var xRowid: fn (MutExternalPointer[sqlite3_vtab_cursor], MutExternalPointer[Int64]) -> Int32
     var xUpdate: fn (
-        ExternalPointer[sqlite3_vtab],
+        MutExternalPointer[sqlite3_vtab],
         Int32,
-        ExternalPointer[ExternalPointer[sqlite3_value]],
-        ExternalPointer[Int64],
+        MutExternalPointer[MutExternalPointer[sqlite3_value]],
+        MutExternalPointer[Int64],
     ) -> Int32
-    var xBegin: fn (ExternalPointer[sqlite3_vtab]) -> Int32
-    var xSync: fn (ExternalPointer[sqlite3_vtab]) -> Int32
-    var xCommit: fn (ExternalPointer[sqlite3_vtab]) -> Int32
-    var xRollback: fn (ExternalPointer[sqlite3_vtab]) -> Int32
+    var xBegin: fn (MutExternalPointer[sqlite3_vtab]) -> Int32
+    var xSync: fn (MutExternalPointer[sqlite3_vtab]) -> Int32
+    var xCommit: fn (MutExternalPointer[sqlite3_vtab]) -> Int32
+    var xRollback: fn (MutExternalPointer[sqlite3_vtab]) -> Int32
     var xFindFunction: fn (
-        ExternalPointer[sqlite3_vtab],
+        MutExternalPointer[sqlite3_vtab],
         Int32,
-        ExternalImmutPointer[Int8],
+        ImmutExternalPointer[Int8],
         fn (
-            ExternalPointer[sqlite3_context], Int32, ExternalPointer[ExternalPointer[sqlite3_value]]
-        ) -> ExternalPointer[OpaquePointer],
-        ExternalPointer[OpaquePointer],
+            MutExternalPointer[sqlite3_context], Int32, MutExternalPointer[MutExternalPointer[sqlite3_value]]
+        ) -> MutExternalPointer[MutExternalPointer[NoneType]],
+        MutExternalPointer[MutExternalPointer[NoneType]],
     ) -> Int32  # FieldDeclNode: This is a const param, but shouldn't be assigned as an alias since it doesn't have a value.
     var xRename: fn (
-        ExternalPointer[sqlite3_vtab], ExternalPointer[Int8]
+        MutExternalPointer[sqlite3_vtab], MutExternalPointer[Int8]
     ) -> Int32  # FieldDeclNode: This is a const param, but shouldn't be assigned as an alias since it doesn't have a value.
-    var xSavepoint: fn (ExternalPointer[sqlite3_vtab], Int32) -> Int32
-    var xRelease: fn (ExternalPointer[sqlite3_vtab], Int32) -> Int32
-    var xRollbackTo: fn (ExternalPointer[sqlite3_vtab], Int32) -> Int32
-    var xShadowName: fn (ExternalImmutPointer[Int8]) -> Int32
+    var xSavepoint: fn (MutExternalPointer[sqlite3_vtab], Int32) -> Int32
+    var xRelease: fn (MutExternalPointer[sqlite3_vtab], Int32) -> Int32
+    var xRollbackTo: fn (MutExternalPointer[sqlite3_vtab], Int32) -> Int32
+    var xShadowName: fn (ImmutExternalPointer[Int8]) -> Int32
     var xIntegrity: fn (
-        ExternalPointer[sqlite3_vtab],
-        ExternalPointer[Int8],
-        ExternalPointer[Int8],
+        MutExternalPointer[sqlite3_vtab],
+        MutExternalPointer[Int8],
+        MutExternalPointer[Int8],
         Int32,
-        ExternalPointer[ExternalPointer[Int8]],
+        MutExternalPointer[MutExternalPointer[Int8]],
     ) -> Int32  # FieldDeclNode: This is a const param, but shouldn't be assigned as an alias since it doesn't have a value.
 
 
@@ -291,12 +291,12 @@ struct _sqlite3_index_info_sqlite3_index_constraint(Movable):
 
 struct sqlite3_index_info(Movable):
     var nConstraint: Int32
-    var aConstraint: ExternalPointer[_sqlite3_index_info_sqlite3_index_constraint]
+    var aConstraint: MutExternalPointer[_sqlite3_index_info_sqlite3_index_constraint]
     var nOrderBy: Int32
-    var aOrderBy: ExternalPointer[_sqlite3_index_info_sqlite3_index_orderby]
-    var aConstraintUsage: ExternalPointer[_sqlite3_index_info_sqlite3_index_constraint_usage]
+    var aOrderBy: MutExternalPointer[_sqlite3_index_info_sqlite3_index_orderby]
+    var aConstraintUsage: MutExternalPointer[_sqlite3_index_info_sqlite3_index_constraint_usage]
     var idxNum: Int32
-    var idxStr: ExternalPointer[Int8]
+    var idxStr: MutExternalPointer[Int8]
     var needToFreeIdxStr: Int32
     var orderByConsumed: Int32
     var estimatedCost: Float64
@@ -308,15 +308,15 @@ struct sqlite3_index_info(Movable):
 struct sqlite3_vtab(Movable):
     """Structures used by the virtual table interface."""
 
-    var pModule: ExternalPointer[
+    var pModule: MutExternalPointer[
         sqlite3_module
     ]  # FieldDeclNode: This is a const param, but shouldn't be assigned as an alias since it doesn't have a value.
     var nRef: Int32
-    var zErrMsg: ExternalPointer[Int8]
+    var zErrMsg: MutExternalPointer[Int8]
 
 
 struct sqlite3_vtab_cursor(Movable):
-    var pVtab: ExternalPointer[sqlite3_vtab]
+    var pVtab: MutExternalPointer[sqlite3_vtab]
 
 
 struct sqlite3_blob(Movable):

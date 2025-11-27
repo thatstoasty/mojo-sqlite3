@@ -1,23 +1,24 @@
 from pathlib import Path
 from sys.ffi import c_char
 
-from memory import Pointer, UnsafeMutPointer
+from memory import Pointer, MutUnsafePointer
 from slight.c.api import get_sqlite3_handle
 from slight.c.raw_bindings import (
     RESULT_MESSAGES,
     sqlite3_connection,
     sqlite3_stmt,
 )
-from slight.c.types import ExternalMutPointer
+from slight.c.types import MutExternalPointer
 from slight.flags import PrepFlag, OpenFlag
 from slight.result import SQLite3Result
 from slight.error import error_msg, raise_if_error, decode_error
 
 
+@explicit_destroy("InnerConnection must be explicitly destroyed. Use self.close() to destroy.")
 struct InnerConnection(Movable):
     """A connection to a SQLite3 database."""
 
-    var db: ExternalMutPointer[sqlite3_connection]
+    var db: MutExternalPointer[sqlite3_connection]
 
     # TODO: Enable zVfs support in the future.
     fn __init__(out self, var path: String, flags: OpenFlag) raises:
@@ -33,10 +34,11 @@ struct InnerConnection(Movable):
         Raises:
             Will return an `Error` if the underlying SQLite open call fails.
         """
-        self.db = ExternalMutPointer[sqlite3_connection]()
-        var result = get_sqlite3_handle()[].open_v2(path, UnsafePointer(to=self.db), flags.value, None)
+        var ptr = MutExternalPointer[sqlite3_connection]()
+        var result = get_sqlite3_handle()[].open_v2(path, UnsafePointer(to=ptr), flags.value, None)
         if result != SQLite3Result.SQLITE_OK:
             raise Error("Could not open database: ", materialize[RESULT_MESSAGES]()[result.value])
+        self.db = ptr
 
     @doc_private
     fn __init__(out self):
@@ -45,9 +47,9 @@ struct InnerConnection(Movable):
         Returns:
             A new `InnerConnection` instance.
         """
-        self.db = ExternalMutPointer[sqlite3_connection]()
+        self.db = MutExternalPointer[sqlite3_connection]()
 
-    fn __init__(out self, db: ExternalMutPointer[sqlite3_connection]):
+    fn __init__(out self, db: MutExternalPointer[sqlite3_connection]):
         """Creates a new `InnerConnection` from an existing `sqlite3_connection` pointer.
 
         Args:
@@ -78,15 +80,15 @@ struct InnerConnection(Movable):
         """
         return Bool(self.db)
 
-    fn take_connection(var self) -> ExternalMutPointer[sqlite3_connection]:
+    fn take_connection(deinit self) -> MutExternalPointer[sqlite3_connection]:
         """Consume the connection and return the pointer to sqlite3.
 
         Returns:
             The pointer to the underlying sqlite3 connection.
         """
-        var db = self.db
-        self.db = ExternalMutPointer[sqlite3_connection]()
-        return db
+        return self.db
+        # self.db = MutExternalPointer[sqlite3_connection]()
+        # return db
 
     fn is_autocommit(self) -> Bool:
         """Returns whether the connection is in auto-commit mode.
@@ -102,7 +104,7 @@ struct InnerConnection(Movable):
         Returns:
             True if the connection is busy, False otherwise.
         """
-        var stmt = get_sqlite3_handle()[].next_stmt(self.db, ExternalMutPointer[sqlite3_stmt]())
+        var stmt = get_sqlite3_handle()[].next_stmt(self.db, MutExternalPointer[sqlite3_stmt]())
         while stmt:
             if get_sqlite3_handle()[].stmt_busy(stmt) != 0:
                 return True
@@ -146,7 +148,7 @@ struct InnerConnection(Movable):
 
     fn prepare(
         self, var sql: String, flags: PrepFlag = PrepFlag.PREPARE_PERSISTENT
-    ) raises -> Tuple[ExternalMutPointer[sqlite3_stmt], UInt]:
+    ) raises -> Tuple[MutExternalPointer[sqlite3_stmt], UInt]:
         """Prepares an SQL statement for execution.
 
         Args:
@@ -159,8 +161,8 @@ struct InnerConnection(Movable):
         Raises:
             Will return an `Error` if the underlying SQLite prepare call fails.
         """
-        var stmt = ExternalMutPointer[sqlite3_stmt]()
-        var str = UnsafePointer(sql.unsafe_cstr_ptr())
+        var stmt = MutExternalPointer[sqlite3_stmt]()
+        var str = sql.unsafe_cstr_ptr()
         var c_tail = UnsafePointer(to=str)
 
         try:
@@ -227,7 +229,7 @@ struct InnerConnection(Movable):
         """
         raise_if_error(self.db, code)
 
-    fn error_msg(self, code: SQLite3Result) -> Optional[StringSlice[ImmutAnyOrigin]]:
+    fn error_msg(self, code: SQLite3Result) -> Optional[StringSlice[origin_of(ImmutOrigin.external)]]:
         """Checks for the error message set in sqlite3, or what the description of the provided code is.
 
         Args:

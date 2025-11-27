@@ -425,5 +425,4 @@ fn test_column_name_reference() raises:
 #     # Error handling for offset would need to be implemented differently
 
 fn main() raises:
-    var suite = TestSuite.discover_tests[__functions_in_module()]()
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()
