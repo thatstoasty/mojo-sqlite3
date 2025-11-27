@@ -88,64 +88,64 @@ fn test_query_map_named() raises:
         assert_equal(row, 2)
 
 
-# fn test_unbound_parameters_are_null() raises:
-#     var db = Connection.open_in_memory()
-#     db.execute_batch("CREATE TABLE test (x TEXT, y TEXT)")
+fn test_unbound_parameters_are_null() raises:
+    var db = Connection.open_in_memory()
+    db.execute_batch("CREATE TABLE test (x TEXT, y TEXT)")
 
-#     var stmt = db.prepare("INSERT INTO test (x, y) VALUES (:x, :y)")
-#     _ = stmt.execute([{":x", "one"}])
+    var stmt = db.prepare("INSERT INTO test (x, y) VALUES (:x, :y)")
+    _ = stmt.execute([{":x", "one"}])
 
-#     fn get_value(r: Row) raises -> NoneType:
-#         var result = r.get_string_slice(0)
-#         if not result:
-#             return
-#         raise Error("Expected NULL value!")
+    fn get_value(r: Row) raises -> NoneType:
+        var result = r.get_string_slice(0)
+        if not result:
+            return
+        raise Error("Expected NULL value!")
 
-#     _ = db.query_row[get_value]("SELECT y FROM test WHERE x = 'one'")
-
-
-# fn test_unbound_parameters_are_reused() raises:
-#     var db = Connection.open_in_memory()
-#     db.execute_batch("CREATE TABLE test (x TEXT, y TEXT)")
-
-#     var stmt = db.prepare("INSERT INTO test (x, y) VALUES (:x, :y)")
-#     _ = stmt.execute([{":x", "one"}])
-#     _ = stmt.execute([{":y", "two"}])
-
-#     fn get_value(r: Row) raises -> String:
-#         return r.get[String](0)
-
-#     var result = db.query_row[get_value]("SELECT x FROM test WHERE y = 'two'")
-#     assert_equal(result, "one")
+    _ = db.query_row[get_value]("SELECT y FROM test WHERE x = 'one'")
 
 
-# fn test_insert() raises:
-#     var db = Connection.open_in_memory()
-#     db.execute_batch("CREATE TABLE foo(x INTEGER UNIQUE)")
-#     var stmt = db.prepare("INSERT OR IGNORE INTO foo (x) VALUES (?1)")
-#     assert_equal(stmt.insert([1]), 1)
-#     assert_equal(stmt.insert([2]), 2)
+fn test_unbound_parameters_are_reused() raises:
+    var db = Connection.open_in_memory()
+    db.execute_batch("CREATE TABLE test (x TEXT, y TEXT)")
 
-#     with assert_raises(contains="0 rows"):
-#         _ = stmt.insert([1])
+    var stmt = db.prepare("INSERT INTO test (x, y) VALUES (:x, :y)")
+    _ = stmt.execute([{":x", "one"}])
+    _ = stmt.execute([{":y", "two"}])
 
-#     var multi = db.prepare("INSERT INTO foo (x) SELECT 3 UNION ALL SELECT 4")
-#     with assert_raises(contains="2 rows"):
-#         _ = multi.insert()
+    fn get_value(r: Row) raises -> String:
+        return r.get[String](0)
+
+    var result = db.query_row[get_value]("SELECT x FROM test WHERE y = 'two'")
+    assert_equal(result, "one")
 
 
-# fn test_insert_different_tables() raises:
-#     var db = Connection.open_in_memory()
-#     db.execute_batch("""
-#     CREATE TABLE foo(x INTEGER);
-#     CREATE TABLE bar(x INTEGER);
-#     """)
+fn test_insert() raises:
+    var db = Connection.open_in_memory()
+    db.execute_batch("CREATE TABLE foo(x INTEGER UNIQUE)")
+    var stmt = db.prepare("INSERT OR IGNORE INTO foo (x) VALUES (?1)")
+    assert_equal(stmt.insert([1]), 1)
+    assert_equal(stmt.insert([2]), 2)
 
-#     var stmt = db.prepare("INSERT INTO foo VALUES (10)")
-#     assert_equal(stmt.insert(), 1)
+    with assert_raises(contains="0 rows"):
+        _ = stmt.insert([1])
 
-#     stmt = db.prepare("INSERT INTO bar VALUES (10)")
-#     assert_equal(stmt.insert(), 1)
+    var multi = db.prepare("INSERT INTO foo (x) SELECT 3 UNION ALL SELECT 4")
+    with assert_raises(contains="2 rows"):
+        _ = multi.insert()
+
+
+fn test_insert_different_tables() raises:
+    var db = Connection.open_in_memory()
+    db.execute_batch("""
+    CREATE TABLE foo(x INTEGER);
+    CREATE TABLE bar(x INTEGER);
+    """)
+
+    var stmt = db.prepare("INSERT INTO foo VALUES (10)")
+    assert_equal(stmt.insert(), 1)
+
+    stmt = db.prepare("INSERT INTO bar VALUES (10)")
+    assert_equal(stmt.insert(), 1)
 
 
 # fn test_exists() raises:
