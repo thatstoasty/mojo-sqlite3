@@ -43,49 +43,49 @@ fn test_execute_named() raises:
     )
 
 
-# fn test_stmt_execute_named() raises:
-#     var db = Connection.open_in_memory()
-#     db.execute_batch("CREATE TABLE test (id INTEGER PRIMARY KEY NOT NULL, name TEXT NOT NULL, flag INTEGER)")
+fn test_stmt_execute_named() raises:
+    var db = Connection.open_in_memory()
+    db.execute_batch("CREATE TABLE test (id INTEGER PRIMARY KEY NOT NULL, name TEXT NOT NULL, flag INTEGER)")
 
-#     var stmt = db.prepare("INSERT INTO test (name) VALUES (:name)")
-#     _ = stmt.execute([{":name", "one"}])
-#     _ = stmt.execute([{":name", "one"}])
+    var stmt = db.prepare("INSERT INTO test (name) VALUES (:name)")
+    _ = stmt.execute([{":name", "one"}])
+    _ = stmt.execute([{":name", "one"}])
 
-#     fn get_count(r: Row) raises -> Int:
-#         return r.get[Int](0)
+    fn get_count(r: Row) raises -> Int:
+        return r.get[Int](0)
 
-#     var stmt2 = db.prepare("SELECT COUNT(*) FROM test WHERE name = :name")
-#     assert_equal(
-#         stmt2.query_row[transform=get_count]([{":name", "one"}]),
-#         2
-#     )
-
-
-# fn test_query_named() raises:
-#     var db = Connection.open_in_memory()
-#     db.execute_batch("""CREATE TABLE test (id INTEGER PRIMARY KEY NOT NULL, name TEXT NOT NULL, flag INTEGER);
-#     INSERT INTO test(id, name) VALUES (1, "one");""")
-
-#     var stmt = db.prepare("SELECT id FROM test where name = :name")
-#     var rows = stmt.query([{":name", "one"}])
-#     for row in rows:
-#         assert_equal(row.get[Int](0), 1)
+    var stmt2 = db.prepare("SELECT COUNT(*) FROM test WHERE name = :name")
+    assert_equal(
+        stmt2.query_row[transform=get_count]([{":name", "one"}]),
+        2
+    )
 
 
-# fn test_query_map_named() raises:
-#     var db = Connection.open_in_memory()
-#     db.execute_batch("""CREATE TABLE test (id INTEGER PRIMARY KEY NOT NULL, name TEXT NOT NULL, flag INTEGER);
-#     INSERT INTO test(id, name) VALUES (1, "one");""")
+fn test_query_named() raises:
+    var db = Connection.open_in_memory()
+    db.execute_batch("""CREATE TABLE test (id INTEGER PRIMARY KEY NOT NULL, name TEXT NOT NULL, flag INTEGER);
+    INSERT INTO test(id, name) VALUES (1, "one");""")
 
-#     fn get_doubled_id(r: Row) -> Int:
-#         try:
-#             return r.get[Int](0) * 2
-#         except:
-#             return 0
+    var stmt = db.prepare("SELECT id FROM test where name = :name")
+    var rows = stmt.query([{":name", "one"}])
+    for row in rows:
+        assert_equal(row.get[Int](0), 1)
 
-#     var stmt = db.prepare("SELECT id FROM test where name = :name")
-#     for row in stmt.query_map[transform=get_doubled_id]([{":name", "one"}]):
-#         assert_equal(row, 2)
+
+fn test_query_map_named() raises:
+    var db = Connection.open_in_memory()
+    db.execute_batch("""CREATE TABLE test (id INTEGER PRIMARY KEY NOT NULL, name TEXT NOT NULL, flag INTEGER);
+    INSERT INTO test(id, name) VALUES (1, "one");""")
+
+    fn get_doubled_id(r: Row) -> Int:
+        try:
+            return r.get[Int](0) * 2
+        except:
+            return 0
+
+    var stmt = db.prepare("SELECT id FROM test where name = :name")
+    for row in stmt.query_map[transform=get_doubled_id]([{":name", "one"}]):
+        assert_equal(row, 2)
 
 
 # fn test_unbound_parameters_are_null() raises:
