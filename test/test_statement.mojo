@@ -148,93 +148,93 @@ fn test_insert_different_tables() raises:
     assert_equal(stmt.insert(), 1)
 
 
-# fn test_exists() raises:
-#     var db = Connection.open_in_memory()
-#     db.execute_batch("""CREATE TABLE foo(x INTEGER);
-#     INSERT INTO foo VALUES(1);
-#     INSERT INTO foo VALUES(2);
-#     """)
-#     var stmt = db.prepare("SELECT 1 FROM foo WHERE x = ?1")
-#     assert_true(stmt.exists([1]))
+fn test_exists() raises:
+    var db = Connection.open_in_memory()
+    db.execute_batch("""CREATE TABLE foo(x INTEGER);
+    INSERT INTO foo VALUES(1);
+    INSERT INTO foo VALUES(2);
+    """)
+    var stmt = db.prepare("SELECT 1 FROM foo WHERE x = ?1")
+    assert_true(stmt.exists([1]))
 
-#     # TODO: How can I reuse statements after a value has been bound?
-#     # The statement is reset for execute, but not query
-#     # assert_true(stmt.exists([2]))
-#     # assert_false(stmt.exists([0]))
+    # TODO: How can I reuse statements after a value has been bound?
+    # The statement is reset for execute, but not query
+    # assert_true(stmt.exists([2]))
+    # assert_false(stmt.exists([0]))
 
 
-# fn test_list_params() raises:
-#     var db = Connection.open_in_memory()
+fn test_list_params() raises:
+    var db = Connection.open_in_memory()
 
-#     fn get_string(r: Row) raises -> String:
-#         return r.get[String](0)
+    fn get_string(r: Row) raises -> String:
+        return r.get[String](0)
 
-#     var s = db.query_row[get_string]("SELECT printf('[%s]', ?1)", ["abc"])
-#     assert_equal(s, "[abc]")
+    var s = db.query_row[get_string]("SELECT printf('[%s]', ?1)", ["abc"])
+    assert_equal(s, "[abc]")
 
-#     var s2 = db.query_row[get_string](
-#         "SELECT printf('%d %s %d', ?1, ?2, ?3)",
-#         [1, "abc", 2],
-#     )
-#     assert_equal(s2, "1 abc 2")
+    var s2 = db.query_row[get_string](
+        "SELECT printf('%d %s %d', ?1, ?2, ?3)",
+        [1, "abc", 2],
+    )
+    assert_equal(s2, "1 abc 2")
 
-#     var s3 = db.query_row[get_string](
-#         "SELECT printf('%d %s %d %d', ?1, ?2, ?3, ?4)",
-#         [1, "abc", 2, 4],
-#     )
-#     assert_equal(s3, "1 abc 2 4")
+    var s3 = db.query_row[get_string](
+        "SELECT printf('%d %s %d %d', ?1, ?2, ?3, ?4)",
+        [1, "abc", 2, 4],
+    )
+    assert_equal(s3, "1 abc 2 4")
     
-#     # Large tuple test
-#     var query = """SELECT printf(
-#         '%d %s | %d %s | %d %s | %d %s || %d %s | %d %s | %d %s | %d %s',
-#         ?1, ?2, ?3, ?4,
-#         ?5, ?6, ?7, ?8,
-#         ?9, ?10, ?11, ?12,
-#         ?13, ?14, ?15, ?16
-#     )"""
-#     var s4 = db.query_row[get_string](
-#         query,
-#         [0, "a", 1, "b", 2, "c", 3, "d", 4, "e", 5, "f", 6, "g", 7, "h"]
-#     )
-#     assert_equal(s4, "0 a | 1 b | 2 c | 3 d || 4 e | 5 f | 6 g | 7 h")
+    # Large tuple test
+    var query = """SELECT printf(
+        '%d %s | %d %s | %d %s | %d %s || %d %s | %d %s | %d %s | %d %s',
+        ?1, ?2, ?3, ?4,
+        ?5, ?6, ?7, ?8,
+        ?9, ?10, ?11, ?12,
+        ?13, ?14, ?15, ?16
+    )"""
+    var s4 = db.query_row[get_string](
+        query,
+        [0, "a", 1, "b", 2, "c", 3, "d", 4, "e", 5, "f", 6, "g", 7, "h"]
+    )
+    assert_equal(s4, "0 a | 1 b | 2 c | 3 d || 4 e | 5 f | 6 g | 7 h")
 
 
-# fn test_query_row() raises:
-#     var db = Connection.open_in_memory()
+fn test_query_row() raises:
+    var db = Connection.open_in_memory()
 
-#     fn get_int64(r: Row) raises -> Int64:
-#         return r.get[Int64](0)
+    fn get_int64(r: Row) raises -> Int64:
+        return r.get[Int64](0)
 
-#     db.execute_batch("""CREATE TABLE foo(x INTEGER, y INTEGER);
-#     INSERT INTO foo VALUES(1, 3);
-#     INSERT INTO foo VALUES(2, 4);""")
-#     var stmt = db.prepare("SELECT y FROM foo WHERE x = ?1")
-#     var y = stmt.query_row[transform=get_int64]([1])
-#     assert_equal(y, 3)
+    db.execute_batch("""CREATE TABLE foo(x INTEGER, y INTEGER);
+    INSERT INTO foo VALUES(1, 3);
+    INSERT INTO foo VALUES(2, 4);""")
+    var stmt = db.prepare("SELECT y FROM foo WHERE x = ?1")
+    var y = stmt.query_row[transform=get_int64]([1])
+    assert_equal(y, 3)
 
 
-# fn query_one() raises:
-#     var db = Connection.open_in_memory()
+fn query_one() raises:
+    var db = Connection.open_in_memory()
     
-#     fn get_int64(r: Row) raises -> Int64:
-#         return r.get[Int64](0)
+    fn get_int64(r: Row) raises -> Int64:
+        return r.get[Int64](0)
 
-#     db.execute_batch("CREATE TABLE foo(x INTEGER, y INTEGER);")
-#     var stmt = db.prepare("SELECT y FROM foo WHERE x = ?1")
+    db.execute_batch("CREATE TABLE foo(x INTEGER, y INTEGER);")
+    var stmt = db.prepare("SELECT y FROM foo WHERE x = ?1")
     
-#     # This should return no rows error
-#     with assert_raises(contains="Query returned no rows"):
-#         _ = stmt.query_row[transform=get_int64]([1])
+    # This should return no rows error
+    with assert_raises(contains="Query returned no rows"):
+        _ = stmt.query_row[transform=get_int64]([1])
     
-#     db.execute_batch("INSERT INTO foo VALUES(1, 3);")
-#     var y2 = stmt.query_row[transform=get_int64]([1])
-#     assert_equal(y2, 3)
+    db.execute_batch("INSERT INTO foo VALUES(1, 3);")
+    var y2 = stmt.query_row[transform=get_int64]([1])
+    assert_equal(y2, 3)
     
-#     db.execute_batch("INSERT INTO foo VALUES(1, 3);")
-#     # This should return more than one row error
-#     # TODO: Implement query_one method that validates single row
-#     # with assert_raises(contains="Query returned more than one row"):
-#     #     _ = stmt.query_one[transform=get_int64]([1])
+    db.execute_batch("INSERT INTO foo VALUES(1, 3);")
+    # This should return more than one row error
+    # TODO: Implement query_one method that validates single row
+    # with assert_raises(contains="Query returned more than one row"):
+    #     _ = stmt.query_one[transform=get_int64]([1])
 
 
 
