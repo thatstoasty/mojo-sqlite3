@@ -7,7 +7,7 @@ from slight.statement import eq_ignore_ascii_case
 from slight.row import Row, String, Int, Bool, SIMD
 from slight.flags import OpenFlag
 from slight.c.raw_bindings import sqlite3_stmt, SQLITE_OK
-from slight.c.api import get_sqlite3_handle
+from slight.c.api import sqlite_ffi
 
 
 @fieldwise_init
@@ -79,7 +79,7 @@ fn test_open_failure() raises:
 #         var sql_ptr = sql.unsafe_cstr_ptr()
 #         var c_tail = UnsafePointer(to=sql_ptr)
 #         var raw_stmt = UnsafePointer[sqlite3_stmt]()
-#         var rc = get_sqlite3_handle()[].prepare_v3(
+#         var rc = sqlite_ffi()[].prepare_v3(
 #             db.db.db,
 #             sql_ptr,
 #             Int32(len(sql) + 1),

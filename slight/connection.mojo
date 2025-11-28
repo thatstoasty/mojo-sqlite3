@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from memory import Pointer
-from slight.c.api import get_sqlite3_handle
+from slight.c.api import sqlite_ffi
 from slight.result import SQLite3Result
 from slight.inner_connection import InnerConnection
 from slight.flags import PrepFlag, OpenFlag
@@ -145,7 +145,7 @@ struct Connection(Movable):
         """
         self.db.raise_if_error(code)
 
-    fn error_msg(self, code: SQLite3Result) -> Optional[StringSlice[origin_of(ImmutOrigin.external)]]:
+    fn error_msg(self, code: SQLite3Result) -> Optional[String]:
         """Checks for the error message set in sqlite3, or what the description of the provided code is.
 
         Args:
@@ -484,7 +484,7 @@ struct Connection(Movable):
         var coll_seq: Optional[String] = None
 
         self.raise_if_error(
-            get_sqlite3_handle()[].table_column_metadata(
+            sqlite_ffi()[].table_column_metadata(
                 self.db.db,
                 db_name,
                 table_name,
@@ -524,7 +524,7 @@ struct Connection(Movable):
         Raises:
             Error: If the underlying SQLite call fails with an unexpected error.
         """
-        var r = get_sqlite3_handle()[].table_column_metadata(
+        var r = sqlite_ffi()[].table_column_metadata(
             self.db.db,
             db_name,
             table_name,

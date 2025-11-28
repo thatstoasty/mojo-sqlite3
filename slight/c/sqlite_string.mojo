@@ -1,5 +1,5 @@
 from sys.ffi import c_char
-from slight.c.api import get_sqlite3_handle
+from slight.c.api import sqlite_ffi
 from slight.c.types import MutExternalPointer
 
 
@@ -12,7 +12,7 @@ struct SQLiteMallocString(Copyable, Movable):
 
     fn __del__(deinit self):
         if self.ptr:
-            get_sqlite3_handle()[].free(self.ptr.bitcast[NoneType]())
+            sqlite_ffi()[].free(self.ptr.bitcast[NoneType]())
 
     fn as_string_slice(mut self) -> StringSlice[origin_of(self)]:
         """Converts the C string to a Mojo StringSlice.

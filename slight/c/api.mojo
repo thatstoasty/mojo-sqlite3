@@ -16,7 +16,7 @@ fn _destroy_global(lib: OpaquePointer[MutAnyOrigin]):
 
 
 @always_inline
-fn get_sqlite3_handle() -> UnsafePointer[sqlite3, MutAnyOrigin]:
+fn sqlite_ffi() -> UnsafePointer[sqlite3, MutAnyOrigin]:
     """Initializes or gets the global sqlite3 handle.
 
     DO NOT FREE THE POINTER MANUALLY. It will be freed automatically on program exit.

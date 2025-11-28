@@ -36,7 +36,7 @@ struct sqlite3:
     fn __init__(out self):
         self.lib = _sqlite3()
 
-    fn version(self) -> StringSlice[origin_of(ImmutOrigin.external)]:
+    fn version(self) -> ImmutExternalPointer[c_char]:
         """Get the SQLite library version string.
 
         Returns a pointer to a string containing the version of the SQLite
@@ -46,9 +46,9 @@ struct sqlite3:
         Returns:
             StringSlice containing the SQLite version.
         """
-        return StringSlice(unsafe_from_utf8_ptr=self.lib.sqlite3_libversion()).get_immutable()
+        return self.lib.sqlite3_libversion()
 
-    fn source_id(self) -> StringSlice[origin_of(ImmutOrigin.external)]:
+    fn source_id(self) -> ImmutExternalPointer[c_char]:
         """Get the SQLite source ID.
 
         Returns a pointer to a string containing the date and time of
@@ -57,9 +57,9 @@ struct sqlite3:
         Returns:
             StringSlice containing the SQLite source identifier.
         """
-        return StringSlice(unsafe_from_utf8_ptr=self.lib.sqlite3_sourceid())
+        return self.lib.sqlite3_sourceid()
 
-    fn library_version_number(self) -> SQLite3Result:
+    fn library_version_number(self) -> c_int:
         """Get the SQLite library version number.
 
         Returns an integer equal to SQLITE_VERSION_NUMBER. The version
@@ -570,7 +570,7 @@ struct sqlite3:
         """
         return self.lib.sqlite3_extended_errcode(db)
 
-    fn errmsg(self, db: MutExternalPointer[sqlite3_connection]) -> Optional[StringSlice[origin_of(ImmutOrigin.external)]]:
+    fn errmsg(self, db: MutExternalPointer[sqlite3_connection]) -> ImmutExternalPointer[c_char]:
         """Retrieve the English-language error message for the most recent error.
 
         This function returns a pointer to a UTF-8 encoded error message
@@ -584,12 +584,13 @@ struct sqlite3:
         Returns:
             Pointer to UTF-8 encoded error message string.
         """
-        var ptr = self.lib.sqlite3_errmsg(db)
-        if not ptr:
-            return None
-        return StringSlice(unsafe_from_utf8_ptr=ptr).get_immutable()
+        return self.lib.sqlite3_errmsg(db)
+        # var ptr = self.lib.sqlite3_errmsg(db)
+        # if not ptr:
+        #     return None
+        # return StringSlice(unsafe_from_utf8_ptr=ptr).get_immutable()
 
-    fn errstr(self, e: c_int) -> Optional[StringSlice[origin_of(ImmutOrigin.external)]]:
+    fn errstr(self, e: c_int) -> ImmutExternalPointer[c_char]:
         """Retrieve the English-language text for a result code.
 
         This function returns a pointer to a UTF-8 encoded string that
@@ -604,10 +605,11 @@ struct sqlite3:
         Returns:
             Pointer to UTF-8 encoded descriptive text for the result code.
         """
-        var ptr = self.lib.sqlite3_errstr(e)
-        if not ptr:
-            return None
-        return StringSlice(unsafe_from_utf8_ptr=ptr).get_immutable()
+        return self.lib.sqlite3_errstr(e)
+        # var ptr = self.lib.sqlite3_errstr(e)
+        # if not ptr:
+        #     return None
+        # return StringSlice(unsafe_from_utf8_ptr=ptr).get_immutable()
 
     fn error_offset(self, db: MutExternalPointer[sqlite3_connection]) -> SQLite3Result:
         """Get byte offset of SQL error.
@@ -702,7 +704,7 @@ struct sqlite3:
     ) -> SQLite3Result:
         return self.lib.sqlite3_prepare_v3(db, zSql, nByte, prepFlags, UnsafePointer(to=ppStmt), pzTail)
 
-    fn sql(self, pStmt: MutExternalPointer[sqlite3_stmt]) -> StringSlice[origin_of(ImmutOrigin.external)]:
+    fn sql(self, pStmt: MutExternalPointer[sqlite3_stmt]) -> ImmutExternalPointer[c_char]:
         """Retrieve the SQL text of a prepared statement.
 
         Returns a pointer to a copy of the UTF-8 SQL text used to create the
@@ -715,7 +717,7 @@ struct sqlite3:
         Returns:
             Pointer to the SQL text used to create the statement.
         """
-        return StringSlice(unsafe_from_utf8_ptr=self.lib.sqlite3_sql(pStmt))
+        return self.lib.sqlite3_sql(pStmt)
 
     fn expanded_sql(self, pStmt: MutExternalPointer[sqlite3_stmt]) -> SQLiteMallocString:
         """Retrieve SQL with bound parameters expanded.
@@ -945,7 +947,7 @@ struct sqlite3:
 
     fn bind_parameter_name(
         self, pStmt: MutExternalPointer[sqlite3_stmt], idx: c_int
-    ) -> Optional[StringSlice[origin_of(ImmutOrigin.external)]]:
+    ) -> ImmutExternalPointer[c_char]:
         """Get the name of a parameter in a prepared statement.
 
         This function returns the name of the N-th SQL parameter in the prepared
@@ -961,10 +963,11 @@ struct sqlite3:
         Returns:
             The name of the parameter, or empty string if it has no name.
         """
-        var ptr = self.lib.sqlite3_bind_parameter_name(pStmt, idx)
-        if not ptr:
-            return None
-        return StringSlice(unsafe_from_utf8_ptr=ptr).get_immutable()
+        return self.lib.sqlite3_bind_parameter_name(pStmt, idx)
+        # var ptr = self.lib.sqlite3_bind_parameter_name(pStmt, idx)
+        # if not ptr:
+        #     return None
+        # return StringSlice(unsafe_from_utf8_ptr=ptr).get_immutable()
 
     fn bind_parameter_index(self, pStmt: MutExternalPointer[sqlite3_stmt], mut zName: String) -> c_int:
         """Get the index of a named parameter.
@@ -1012,7 +1015,7 @@ struct sqlite3:
         """
         return self.lib.sqlite3_column_count(pStmt)
 
-    fn column_name(self, pStmt: MutExternalPointer[sqlite3_stmt], N: c_int) -> Optional[StringSlice[origin_of(ImmutOrigin.external)]]:
+    fn column_name(self, pStmt: MutExternalPointer[sqlite3_stmt], N: c_int) -> ImmutExternalPointer[c_char]:
         """Get the name of a column in a result set.
 
         This function returns the name assigned to a particular column in the
@@ -1027,15 +1030,11 @@ struct sqlite3:
         Returns:
             The column name, or None if N is out of range.
         """
-        var ptr = self.lib.sqlite3_column_name(pStmt, N)
-        if not ptr:
-            return None
-
-        return StringSlice(unsafe_from_utf8_ptr=ptr).get_immutable()
+        return self.lib.sqlite3_column_name(pStmt, N)
 
     fn column_database_name(
         self, pStmt: MutExternalPointer[sqlite3_stmt], idx: c_int
-    ) -> Optional[StringSlice[origin_of(ImmutOrigin.external)]]:
+    ) -> ImmutExternalPointer[c_char]:
         """Get the database name of a column.
 
         This function returns the name of the database that is the origin of
@@ -1049,15 +1048,16 @@ struct sqlite3:
         Returns:
             The database name, or None if not available.
         """
-        var ptr = self.lib.sqlite3_column_database_name(pStmt, idx)
-        if not ptr:
-            return None
+        return self.lib.sqlite3_column_database_name(pStmt, idx)
+        # var ptr = self.lib.sqlite3_column_database_name(pStmt, idx)
+        # if not ptr:
+        #     return None
 
-        return StringSlice(unsafe_from_utf8_ptr=ptr).get_immutable()
+        # return StringSlice(unsafe_from_utf8_ptr=ptr).get_immutable()
 
     fn column_table_name(
         self, pStmt: MutExternalPointer[sqlite3_stmt], idx: c_int
-    ) -> Optional[StringSlice[origin_of(ImmutOrigin.external)]]:
+    ) -> ImmutExternalPointer[c_char]:
         """Get the table name of a column.
 
         This function returns the name of the table that is the origin of
@@ -1071,15 +1071,16 @@ struct sqlite3:
         Returns:
             The table name, or None if not available.
         """
-        var ptr = self.lib.sqlite3_column_table_name(pStmt, idx)
-        if not ptr:
-            return None
+        return self.lib.sqlite3_column_table_name(pStmt, idx)
+        # var ptr = self.lib.sqlite3_column_table_name(pStmt, idx)
+        # if not ptr:
+        #     return None
 
-        return StringSlice(unsafe_from_utf8_ptr=ptr).get_immutable()
+        # return StringSlice(unsafe_from_utf8_ptr=ptr).get_immutable()
 
     fn column_origin_name(
         self, pStmt: MutExternalPointer[sqlite3_stmt], idx: c_int
-    ) -> Optional[StringSlice[origin_of(ImmutOrigin.external)]]:
+    ) -> ImmutExternalPointer[c_char]:
         """Get the origin column name.
 
         This function returns the name of the table column that is the origin
@@ -1093,15 +1094,16 @@ struct sqlite3:
         Returns:
             The origin column name, or None if not available.
         """
-        var ptr = self.lib.sqlite3_column_origin_name(pStmt, idx)
-        if not ptr:
-            return None
+        return self.lib.sqlite3_column_origin_name(pStmt, idx)
+        # var ptr = self.lib.sqlite3_column_origin_name(pStmt, idx)
+        # if not ptr:
+        #     return None
 
-        return StringSlice(unsafe_from_utf8_ptr=ptr).get_immutable()
+        # return StringSlice(unsafe_from_utf8_ptr=ptr).get_immutable()
 
     fn column_decltype(
         self, pStmt: MutExternalPointer[sqlite3_stmt], idx: c_int
-    ) -> Optional[StringSlice[origin_of(ImmutOrigin.external)]]:
+    ) -> ImmutExternalPointer[c_char]:
         """Get the declared datatype of a column.
 
         This function returns the declared datatype of a result column. The
@@ -1116,11 +1118,12 @@ struct sqlite3:
         Returns:
             The declared datatype, or None if not available.
         """
-        var ptr = self.lib.sqlite3_column_decltype(pStmt, idx)
-        if not ptr:
-            return None
+        return self.lib.sqlite3_column_decltype(pStmt, idx)
+        # var ptr = self.lib.sqlite3_column_decltype(pStmt, idx)
+        # if not ptr:
+        #     return None
 
-        return StringSlice(unsafe_from_utf8_ptr=ptr).get_immutable()
+        # return StringSlice(unsafe_from_utf8_ptr=ptr).get_immutable()
 
     fn step(self, pStmt: MutExternalPointer[sqlite3_stmt]) -> SQLite3Result:
         """Execute a prepared statement.
@@ -1142,7 +1145,7 @@ struct sqlite3:
         """
         return self.lib.sqlite3_step(pStmt)
 
-    fn column_blob(self, pStmt: MutExternalPointer[sqlite3_stmt], iCol: c_int) -> MutExternalPointer[NoneType]:
+    fn column_blob(self, pStmt: MutExternalPointer[sqlite3_stmt], iCol: c_int) -> ImmutExternalPointer[NoneType]:
         """Result Values From A Query - BLOB.
 
         These routines return information about a single column of the current
@@ -1551,7 +1554,7 @@ struct sqlite3:
         """
         return self.lib.sqlite3_value_pointer(value, typeStr.unsafe_cstr_ptr())
 
-    fn value_text(self, value: MutExternalPointer[sqlite3_value]) -> StringSlice[origin_of(ImmutOrigin.external)]:
+    fn value_text(self, value: MutExternalPointer[sqlite3_value]) -> ImmutExternalPointer[c_uchar]:
         """Obtaining SQL Values - TEXT.
 
         This routine extracts a text string from an sqlite3_value object.
@@ -1562,7 +1565,7 @@ struct sqlite3:
         Returns:
             The value as a UTF-8 encoded string.
         """
-        return StringSlice(unsafe_from_utf8_ptr=self.lib.sqlite3_value_text(value))
+        return self.lib.sqlite3_value_text(value)
 
     fn value_bytes(self, value: MutExternalPointer[sqlite3_value]) -> SQLite3Result:
         """Size Of A BLOB Or TEXT Value In Bytes.
@@ -2112,7 +2115,7 @@ struct sqlite3:
         """
         return self.lib.sqlite3_db_handle(pStmt)
 
-    fn db_name(self, db: MutExternalPointer[sqlite3_connection], N: c_int) -> StringSlice[origin_of(ImmutOrigin.external)]:
+    fn db_name(self, db: MutExternalPointer[sqlite3_connection], N: c_int) -> ImmutExternalPointer[c_char]:
         """Return The Name Of An Attached Database.
 
         This routine returns the name of the Nth attached database.
@@ -2124,11 +2127,11 @@ struct sqlite3:
         Returns:
             Database name.
         """
-        return StringSlice(unsafe_from_utf8_ptr=self.lib.sqlite3_db_name(db, N))
+        return self.lib.sqlite3_db_name(db, N)
 
     fn db_filename(
         self, db: MutExternalPointer[sqlite3_connection], mut zDbName: String
-    ) -> Optional[StringSlice[origin_of(ImmutOrigin.external)]]:
+    ) -> ImmutExternalPointer[c_char]:
         """Return The Filename For A Database Connection.
 
         This routine returns the filename associated with a database connection.
@@ -2140,11 +2143,12 @@ struct sqlite3:
         Returns:
             Filename or None if not available.
         """
-        var ptr = self.lib.sqlite3_db_filename(db, zDbName.unsafe_cstr_ptr())
-        if not ptr:
-            return None
+        return self.lib.sqlite3_db_filename(db, zDbName.unsafe_cstr_ptr())
+        # var ptr = self.lib.sqlite3_db_filename(db, zDbName.unsafe_cstr_ptr())
+        # if not ptr:
+        #     return None
 
-        return StringSlice(unsafe_from_utf8_ptr=ptr).get_immutable()
+        # return StringSlice(unsafe_from_utf8_ptr=ptr).get_immutable()
 
     fn db_readonly(self, db: MutExternalPointer[sqlite3_connection], mut zDbName: String) -> SQLite3Result:
         """Determine If A Database Is Read-Only.
@@ -2709,7 +2713,7 @@ struct sqlite3:
 
     fn vtab_collation(
         self, pIdxInfo: MutExternalPointer[sqlite3_index_info], iCons: c_int
-    ) -> StringSlice[origin_of(ImmutOrigin.external)]:
+    ) -> ImmutExternalPointer[c_char]:
         """Get The Collation For A Virtual Table Constraint.
 
         This routine returns the name of the collation sequence for a constraint
@@ -2722,7 +2726,7 @@ struct sqlite3:
         Returns:
             Collation name.
         """
-        return StringSlice(unsafe_from_utf8_ptr=self.lib.sqlite3_vtab_collation(pIdxInfo, iCons))
+        return self.lib.sqlite3_vtab_collation(pIdxInfo, iCons)
 
     fn vtab_distinct(self, pIdxInfo: MutExternalPointer[sqlite3_index_info]) -> SQLite3Result:
         """Determine If A Virtual Table Query Is DISTINCT.

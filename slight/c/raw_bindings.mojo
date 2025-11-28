@@ -1405,7 +1405,7 @@ struct _sqlite3(Movable):
         """
         return self.lib.get_function[fn (type_of(pStmt)) -> c_int]("sqlite3_step")(pStmt)
 
-    fn sqlite3_column_blob(self, pStmt: MutExternalPointer[sqlite3_stmt], iCol: c_int) -> MutExternalPointer[NoneType]:
+    fn sqlite3_column_blob(self, pStmt: MutExternalPointer[sqlite3_stmt], iCol: c_int) -> ImmutExternalPointer[NoneType]:
         """Result Values From A Query - BLOB.
 
         These routines return information about a single column of the current
@@ -1419,7 +1419,7 @@ struct _sqlite3(Movable):
         Returns:
             Pointer to the BLOB data, or NULL if the column is NULL.
         """
-        return self.lib.get_function[fn (type_of(pStmt), type_of(iCol)) -> MutExternalPointer[NoneType]](
+        return self.lib.get_function[fn (type_of(pStmt), type_of(iCol)) -> ImmutExternalPointer[NoneType]](
             "sqlite3_column_blob"
         )(pStmt, iCol)
 

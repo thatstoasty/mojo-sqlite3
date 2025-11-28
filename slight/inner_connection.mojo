@@ -2,7 +2,7 @@ from pathlib import Path
 from sys.ffi import c_char
 
 from memory import Pointer, MutUnsafePointer
-from slight.c.api import get_sqlite3_handle
+from slight.c.api import sqlite_ffi
 from slight.c.raw_bindings import (
     RESULT_MESSAGES,
     sqlite3_connection,
@@ -35,7 +35,7 @@ struct InnerConnection(Movable):
             Will return an `Error` if the underlying SQLite open call fails.
         """
         var ptr = MutExternalPointer[sqlite3_connection]()
-        var result = get_sqlite3_handle()[].open_v2(path, UnsafePointer(to=ptr), flags.value, None)
+        var result = sqlite_ffi()[].open_v2(path, UnsafePointer(to=ptr), flags.value, None)
         if result != SQLite3Result.SQLITE_OK:
             raise Error("Could not open database: ", materialize[RESULT_MESSAGES]()[result.value])
         self.db = ptr
@@ -96,7 +96,7 @@ struct InnerConnection(Movable):
         Returns:
             True if the connection is in auto-commit mode, False otherwise.
         """
-        return get_sqlite3_handle()[].get_autocommit(self.db)
+        return sqlite_ffi()[].get_autocommit(self.db)
 
     fn is_busy(self) -> Bool:
         """Returns whether the connection is currently busy.
@@ -104,11 +104,11 @@ struct InnerConnection(Movable):
         Returns:
             True if the connection is busy, False otherwise.
         """
-        var stmt = get_sqlite3_handle()[].next_stmt(self.db, MutExternalPointer[sqlite3_stmt]())
+        var stmt = sqlite_ffi()[].next_stmt(self.db, MutExternalPointer[sqlite3_stmt]())
         while stmt:
-            if get_sqlite3_handle()[].stmt_busy(stmt) != 0:
+            if sqlite_ffi()[].stmt_busy(stmt) != 0:
                 return True
-            stmt = get_sqlite3_handle()[].next_stmt(self.db, stmt)
+            stmt = sqlite_ffi()[].next_stmt(self.db, stmt)
         return False
 
     fn close(deinit self) -> SQLite3Result:
@@ -120,7 +120,7 @@ struct InnerConnection(Movable):
         if not self.db:
             return SQLite3Result.SQLITE_OK
 
-        return get_sqlite3_handle()[].close(self.db)
+        return sqlite_ffi()[].close(self.db)
 
     fn changes(self) -> Int64:
         """Returns the number of rows changed by the last INSERT, UPDATE, or DELETE statement.
@@ -128,7 +128,7 @@ struct InnerConnection(Movable):
         Returns:
             The number of rows changed.
         """
-        return get_sqlite3_handle()[].changes64(self.db)
+        return sqlite_ffi()[].changes64(self.db)
 
     fn total_changes(self) -> Int64:
         """Returns the total number of changes made to the database.
@@ -136,7 +136,7 @@ struct InnerConnection(Movable):
         Returns:
             The total number of changes.
         """
-        return get_sqlite3_handle()[].total_changes64(self.db)
+        return sqlite_ffi()[].total_changes64(self.db)
 
     fn last_insert_row_id(self) -> Int64:
         """Returns the row ID of the last inserted row.
@@ -144,7 +144,7 @@ struct InnerConnection(Movable):
         Returns:
             The row ID of the last inserted row.
         """
-        return get_sqlite3_handle()[].last_insert_rowid(self.db)
+        return sqlite_ffi()[].last_insert_rowid(self.db)
 
     fn prepare(
         self, var sql: String, flags: PrepFlag = PrepFlag.PREPARE_PERSISTENT
@@ -167,11 +167,11 @@ struct InnerConnection(Movable):
 
         try:
             self.raise_if_error(
-                get_sqlite3_handle()[].prepare_v3(self.db, str, Int32(len(sql)), flags.value, stmt, c_tail),
+                sqlite_ffi()[].prepare_v3(self.db, str, Int32(len(sql)), flags.value, stmt, c_tail),
             )
         except e:
             if stmt:
-                _ = get_sqlite3_handle()[].finalize(stmt)
+                _ = sqlite_ffi()[].finalize(stmt)
             raise e
 
         var tail: UInt = 0
@@ -193,11 +193,11 @@ struct InnerConnection(Movable):
             The file path of the database, or None if the database is in-memory.
         """
         var db_name = String("main")
-        var path = get_sqlite3_handle()[].db_filename(self.db, db_name)
+        var path = sqlite_ffi()[].db_filename(self.db, db_name)
         if not path:
             return None
 
-        return Path(path.value())
+        return Path(StringSlice(unsafe_from_utf8_ptr=path))
 
     fn is_database_read_only(self, var database: String) raises -> Bool:
         """Checks if the specified database is opened in read-only mode.
@@ -208,7 +208,7 @@ struct InnerConnection(Movable):
         Returns:
             True if the database is read-only, False otherwise.
         """
-        var result = get_sqlite3_handle()[].db_readonly(self.db, database)
+        var result = sqlite_ffi()[].db_readonly(self.db, database)
         if result == SQLite3Result.SQLITE_OK:
             return True
         elif result == SQLite3Result.SQLITE_ERROR:
@@ -229,7 +229,7 @@ struct InnerConnection(Movable):
         """
         raise_if_error(self.db, code)
 
-    fn error_msg(self, code: SQLite3Result) -> Optional[StringSlice[origin_of(ImmutOrigin.external)]]:
+    fn error_msg(self, code: SQLite3Result) -> Optional[String]:
         """Checks for the error message set in sqlite3, or what the description of the provided code is.
 
         Args:

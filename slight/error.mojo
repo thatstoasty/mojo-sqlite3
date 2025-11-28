@@ -1,11 +1,11 @@
 from memory import MutUnsafePointer
-from slight.c.api import get_sqlite3_handle
+from slight.c.api import sqlite_ffi
 from slight.c.types import MutExternalPointer
 from slight.bindings import sqlite3_connection
 from slight.result import SQLite3Result
 
 
-fn error_msg(db: MutExternalPointer[sqlite3_connection], code: SQLite3Result) -> Optional[StringSlice[origin_of(ImmutOrigin.external)]]:
+fn error_msg(db: MutExternalPointer[sqlite3_connection], code: SQLite3Result) -> Optional[String]:
     """Checks for the error message set in sqlite3, or what the description of the provided code is.
 
     Args:
@@ -15,10 +15,16 @@ fn error_msg(db: MutExternalPointer[sqlite3_connection], code: SQLite3Result) ->
     Returns:
         An optional string slice containing the error message, or None if not found.
     """
-    if not db or get_sqlite3_handle()[].errcode(db) != code:
-        return get_sqlite3_handle()[].errstr(code.value)
+    if not db or sqlite_ffi()[].errcode(db) != code:
+        var ptr = sqlite_ffi()[].errstr(code.value)
+        if not ptr:
+            return None
+        return String(unsafe_from_utf8_ptr=ptr)
 
-    return get_sqlite3_handle()[].errmsg(db)
+    var ptr = sqlite_ffi()[].errmsg(db)
+    if not ptr:
+        return None
+    return String(unsafe_from_utf8_ptr=ptr)
 
 
 fn raise_if_error(db: MutExternalPointer[sqlite3_connection], code: SQLite3Result) raises:
@@ -50,7 +56,7 @@ fn decode_error(db: MutExternalPointer[sqlite3_connection], code: SQLite3Result)
     return Error(error_from_sqlite_code(code, error_msg(db, code)))
 
 
-fn error_from_sqlite_code(code: SQLite3Result, msg: Optional[StringSlice[origin_of(ImmutOrigin.external)]]) -> String:
+fn error_from_sqlite_code(code: SQLite3Result, msg: Optional[String]) -> String:
     """Constructs an error message from the SQLite error code and message.
 
     Args:
