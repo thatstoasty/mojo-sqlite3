@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - slight/**
+      - pixi.toml
 
 jobs:
   build:
@@ -30,7 +31,7 @@ jobs:
 
       - uses: prefix-dev/setup-pixi@v0.8.10
         with:
-          pixi-version: v0.47.0
+          pixi-version: v0.59.0
 
       - name: Build package for target platform
         env:

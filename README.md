@@ -1,4 +1,19 @@
-# mojo-sqlite3
+# slight
+
+`slight` is a Mojo wrapper around the SQLite3 C library, providing a safe and ergonomic interface for interacting with SQLite databases in Mojo applications.
+
+![Mojo Version](https://img.shields.io/badge/Mojo%F0%9F%94%A5-25.7-orange)
+![Build Status](https://github.com/thatstoasty/mojo-sqlite3/actions/workflows/build.yml/badge.svg)
+![Test Status](https://github.com/thatstoasty/mojo-sqlite3/actions/workflows/test.yml/badge.svg)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+More documentation will come, but for now please use the test files as reference for usage examples.
+
+## Attributions
+
+This project was heavily inspired by:
+
+- <https://github.com/alexcrichton/curl-rust/tree/main>
 
 ## TODO
 

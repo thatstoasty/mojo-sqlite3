@@ -268,6 +268,7 @@ fn test_query_by_column_name_ignore_case() raises:
     assert_equal(y, 3)
 
 
+# BROKEN
 fn test_expanded_sql() raises:
     var db = Connection.open_in_memory()
     var stmt = db.prepare("SELECT ?1")
@@ -370,6 +371,7 @@ fn readonly() raises:
     var stmt = db.prepare("SELECT 1;")
     assert_true(stmt.is_read_only())
 
+
 fn test_column_name_in_error() raises:
     var db = Connection.open_in_memory()
     db.execute_batch("""BEGIN;
@@ -417,13 +419,5 @@ fn test_column_name_reference() raises:
     assert_equal(same_column_name, column_name)
 
 
-# fn test_error_offset() raises:
-#     # This would be conditional on modern_sqlite feature
-#     var db = Connection.open_in_memory()
-#     # In Mojo, error handling would be different
-#     # var r = db.execute_batch("SELECT INVALID_FUNCTION;")
-#     # Error handling for offset would need to be implemented differently
-
 fn main() raises:
-    var suite = TestSuite.discover_tests[__functions_in_module()]()
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

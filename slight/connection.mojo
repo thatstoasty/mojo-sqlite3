@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from memory import Pointer
-from slight.c.api import get_sqlite3_handle
+from slight.c.api import sqlite_ffi
 from slight.result import SQLite3Result
 from slight.inner_connection import InnerConnection
 from slight.flags import PrepFlag, OpenFlag
@@ -12,7 +12,6 @@ from slight.types.from_sql import FromSQL
 from slight.column import ColumnMetadata
 
 
-@explicit_destroy("Connection must be explicitly destroyed. Use self.close() to destroy.")
 struct Connection(Movable):
     """A connection to a SQLite database."""
 
@@ -109,14 +108,19 @@ struct Connection(Movable):
             other: The connection to move from.
         """
         self.db = other^.take_connection()
-        other = Connection()
 
     fn __del__(deinit self):
         """Closes the connection when it is deleted."""
         if self.db:
             _ = self^.close()
-            # Remove this line when I can call deinit explicitly
-            self = Connection()
+    
+    fn __enter__(var self) -> Self:
+        """Enter the context manager.
+
+        Returns:
+            The connection itself.
+        """
+        return self^
 
     fn take_connection(var self) -> InnerConnection:
         """Consume the connection and return the inner connection.
@@ -141,7 +145,7 @@ struct Connection(Movable):
         """
         self.db.raise_if_error(code)
 
-    fn error_msg(self, code: SQLite3Result) -> Optional[StringSlice[ImmutAnyOrigin]]:
+    fn error_msg(self, code: SQLite3Result) -> Optional[String]:
         """Checks for the error message set in sqlite3, or what the description of the provided code is.
 
         Args:
@@ -480,7 +484,7 @@ struct Connection(Movable):
         var coll_seq: Optional[String] = None
 
         self.raise_if_error(
-            get_sqlite3_handle()[].table_column_metadata(
+            sqlite_ffi()[].table_column_metadata(
                 self.db.db,
                 db_name,
                 table_name,
@@ -520,7 +524,7 @@ struct Connection(Movable):
         Raises:
             Error: If the underlying SQLite call fails with an unexpected error.
         """
-        var r = get_sqlite3_handle()[].table_column_metadata(
+        var r = sqlite_ffi()[].table_column_metadata(
             self.db.db,
             db_name,
             table_name,
