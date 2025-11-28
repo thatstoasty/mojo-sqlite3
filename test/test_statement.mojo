@@ -267,12 +267,13 @@ fn test_query_by_column_name_ignore_case() raises:
     var y = stmt.query_row[transform=get_int]()
     assert_equal(y, 3)
 
+
 # BROKEN
-# fn test_expanded_sql() raises:
-#     var db = Connection.open_in_memory()
-#     var stmt = db.prepare("SELECT ?1")
-#     stmt.bind_parameter(1, 1)
-#     assert_equal(stmt.expanded_sql().value(), "SELECT 1")
+fn test_expanded_sql() raises:
+    var db = Connection.open_in_memory()
+    var stmt = db.prepare("SELECT ?1")
+    stmt.bind_parameter(1, 1)
+    assert_equal(stmt.expanded_sql().value(), "SELECT 1")
 
 
 fn test_bind_parameters() raises:

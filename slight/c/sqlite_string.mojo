@@ -14,10 +14,10 @@ struct SQLiteMallocString(Copyable, Movable):
         if self.ptr:
             get_sqlite3_handle()[].free(self.ptr.bitcast[NoneType]())
 
-    fn as_string_slice(self) -> StringSlice[origin_of(MutOrigin.external)]:
+    fn as_string_slice(mut self) -> StringSlice[origin_of(self)]:
         """Converts the C string to a Mojo StringSlice.
 
         Returns:
             A StringSlice representing the C string.
         """
-        return StringSlice(unsafe_from_utf8_ptr=self.ptr)
+        return StringSlice(unsafe_from_utf8_ptr=self.ptr.unsafe_origin_cast[origin_of(self)]())
