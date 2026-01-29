@@ -5,11 +5,15 @@ from slight.c.api import sqlite_ffi
 from slight.result import SQLite3Result
 from slight.inner_connection import InnerConnection
 from slight.flags import PrepFlag, OpenFlag
-from slight.params import Parameter
+from slight.params import Params
+from slight.raw_statement import RawStatement
 from slight.statement import Statement
 from slight.row import Row, Int  # RowIndex extension for Int
+from slight.types.to_sql import ToSQL
 from slight.types.from_sql import FromSQL
 from slight.column import ColumnMetadata
+from slight.transaction import Transaction, Savepoint, TransactionBehavior
+from slight.pragma import Sql
 
 
 struct Connection(Movable):
@@ -101,14 +105,6 @@ struct Connection(Movable):
         """
         self = Connection.open(path)
 
-    fn __moveinit__(out self, deinit other: Self):
-        """Move-initializes a new connection from the given connection.
-
-        Args:
-            other: The connection to move from.
-        """
-        self.db = other^.take_connection()
-
     fn __del__(deinit self):
         """Closes the connection when it is deleted."""
         if self.db:
@@ -121,18 +117,6 @@ struct Connection(Movable):
             The connection itself.
         """
         return self^
-
-    fn take_connection(var self) -> InnerConnection:
-        """Consume the connection and return the inner connection.
-
-        Returns:
-            The inner connection.
-        """
-        var db = self.db^.take_connection()
-        self.db = InnerConnection()
-        self^.close()
-
-        return InnerConnection(db)
 
     fn raise_if_error(self, code: SQLite3Result) raises:
         """Raises if the SQLite error code is not `SQLITE_OK`.
@@ -219,15 +203,15 @@ struct Connection(Movable):
 
         # If there is trailing SQL after the first statement that contains a valid SQL statement, raise an error.
         if tail > 0:
-            var tail_stmt, _ = self.db.prepare(sql[Int(tail) :])
+            var tail_stmt, _ = self.db.prepare(String(sql[Int(tail) :]))
             if tail_stmt:
                 raise Error(
                     "MultipleStatementsError: Prepared statement contains multiple SQL statements. Should be one."
                 )
 
-        return Statement(Pointer(to=self), stmt)
-
-    fn execute(self, var sql: String, params: List[Parameter] = []) raises -> Int64:
+        return Statement(Pointer(to=self), RawStatement(stmt))
+    
+    fn execute[T: Params](self, var sql: String, params: T) raises -> Int64:
         """Executes a SQL statement with the given parameters.
 
         Args:
@@ -241,9 +225,9 @@ struct Connection(Movable):
         try:
             return stmt.execute(params)
         finally:
-            _ = stmt.finalize()
+            _ = stmt^.finalize()
 
-    fn execute(self, var sql: String, params: Dict[String, Parameter]) raises -> Int64:
+    fn execute[*Ts: ToSQL](self, var sql: String, *params: *Ts) raises -> Int64:
         """Executes a SQL statement with the given parameters.
 
         Args:
@@ -253,31 +237,11 @@ struct Connection(Movable):
         Returns:
             The number of rows affected by the statement.
         """
-        var stmt = self.prepare(sql^)
-        try:
-            return stmt.execute(params)
-        finally:
-            _ = stmt.finalize()
-
-    fn execute(self, var sql: String, params: List[Tuple[String, Parameter]]) raises -> Int64:
-        """Executes a SQL statement with the given parameters.
-
-        Args:
-            sql: The SQL statement to execute.
-            params: The parameters to bind to the SQL statement.
-
-        Returns:
-            The number of rows affected by the statement.
-        """
-        var stmt = self.prepare(sql^)
-        try:
-            return stmt.execute(params)
-        finally:
-            _ = stmt.finalize()
+        return self.prepare(sql^).execute(params)
 
     fn query_row[
-        T: Copyable & Movable, //, transform: fn (Row) raises -> T
-    ](mut self, var sql: String, params: List[Parameter] = []) raises -> T:
+        T: Movable, P: Params, //, transform: fn (Row) raises -> T
+    ](self, var sql: String, params: P) raises -> T:
         """Executes the query and returns a single row.
 
         This is a convenience method for queries that are expected to return exactly one row.
@@ -285,6 +249,7 @@ struct Connection(Movable):
 
         Parameters:
             T: The type that the row will be transformed into.
+            P: The type of the parameters to bind.
             transform: A function that takes a Row and returns a value of type T.
 
         Args:
@@ -297,15 +262,11 @@ struct Connection(Movable):
         Raises:
             Error: If parameter binding fails, no rows are returned, or more than one row is returned.
         """
-        var stmt = self.prepare(sql^)
-        try:
-            return stmt.query_row[transform=transform](params)
-        finally:
-            _ = stmt.finalize()
+        return self.prepare(sql^).query_row[transform=transform](params)
 
     fn query_row[
-        T: Copyable & Movable, //, transform: fn (Row) raises -> T
-    ](mut self, var sql: String, params: Dict[String, Parameter]) raises -> T:
+        T: Movable, //, transform: fn (Row) raises -> T, *Ts: ToSQL
+    ](self, var sql: String, *params: *Ts) raises -> T:
         """Executes the query and returns a single row.
 
         This is a convenience method for queries that are expected to return exactly one row.
@@ -314,6 +275,7 @@ struct Connection(Movable):
         Parameters:
             T: The type that the row will be transformed into.
             transform: A function that takes a Row and returns a value of type T.
+            Ts: The types of the parameters to bind.
 
         Args:
             sql: The SQL query to execute.
@@ -325,15 +287,11 @@ struct Connection(Movable):
         Raises:
             Error: If parameter binding fails, no rows are returned, or more than one row is returned.
         """
-        var stmt = self.prepare(sql^)
-        try:
-            return stmt.query_row[transform=transform](params)
-        finally:
-            _ = stmt.finalize()
-
+        return self.prepare(sql^).query_row[transform=transform](params)
+    
     fn query_row[
-        T: Copyable & Movable, //, transform: fn (Row) raises -> T
-    ](mut self, var sql: String, params: List[Tuple[String, Parameter]]) raises -> T:
+        T: Movable, //, transform: fn (Row) raises -> T, *Ts: ToSQL
+    ](self, var sql: String, params: VariadicPack[_, ToSQL, *Ts]) raises -> T:
         """Executes the query and returns a single row.
 
         This is a convenience method for queries that are expected to return exactly one row.
@@ -342,10 +300,11 @@ struct Connection(Movable):
         Parameters:
             T: The type that the row will be transformed into.
             transform: A function that takes a Row and returns a value of type T.
+            Ts: The types of the parameters to bind.
 
         Args:
             sql: The SQL query to execute.
-            params: A list of parameters to bind to the statement.
+            params: A variadic pack of parameters to bind to the statement.
 
         Returns:
             The single Row returned by the query.
@@ -353,11 +312,7 @@ struct Connection(Movable):
         Raises:
             Error: If parameter binding fails, no rows are returned, or more than one row is returned.
         """
-        var stmt = self.prepare(sql^)
-        try:
-            return stmt.query_row[transform=transform](params)
-        finally:
-            _ = stmt.finalize()
+        return self.prepare(sql^).query_row[transform=transform](params)
 
     fn execute_batch(self, sql: String) raises:
         """Executes a batch of SQL statements.
@@ -369,13 +324,14 @@ struct Connection(Movable):
         while len(current_sql) > 0:
             # Is it possible to copy the sql string less here? I don't want to keep allocating strings.
             var stmt, tail = self.db.prepare(current_sql.copy(), PrepFlag.PREPARE_PERSISTENT)
-            if stmt and Statement(Pointer(to=self), stmt).step():
-                raise Error("ExecuteReturnedResults: The executed batch returned results, which is not supported.")
+            if stmt and Statement(Pointer(to=self), RawStatement(stmt)).step():
+                pass # some pragmas return results
+                # raise Error("ExecuteReturnedResults: The executed batch returned results, which is not supported.")
 
             if tail == 0 or Int(tail) >= len(current_sql):
                 break
 
-            current_sql = current_sql[Int(tail) :]
+            current_sql = String(current_sql[Int(tail) :])
 
     fn path(self) -> Optional[Path]:
         """Returns the file path of the database.
@@ -388,26 +344,38 @@ struct Connection(Movable):
     fn last_insert_row_id(self) -> Int64:
         """Returns the row ID of the last inserted row."""
         return self.db.last_insert_row_id()
+    
+    fn one_column[P: Params, //, T: FromSQL](self, var sql: String, params: P) raises -> T:
+        """Fetches a single column from the first row of the result set.
 
-    fn one_column[
-        T: FromSQL,
-    ](mut self, var sql: String, params: List[Parameter] = []) raises -> T:
+        Args:
+            sql: The SQL query to execute.
+            params: The parameters to bind to the SQL query.
+        
+        Returns:
+            The value of the first column in the first row of the result set.
+        
+        Raises:
+            Error: If the query fails or no rows are returned.
+        """
         fn get_item(row: Row) raises -> T:
             return row.get[T](0)
 
         return self.query_row[get_item](sql, params)
 
-    fn one_column[
-        T: FromSQL,
-    ](mut self, var sql: String, params: Dict[String, Parameter]) raises -> T:
-        fn get_item(row: Row) raises -> T:
-            return row.get[T](0)
+    fn one_column[T: FromSQL, *Ts: ToSQL](self, var sql: String, *params: *Ts) raises -> T:
+        """Fetches a single column from the first row of the result set.
 
-        return self.query_row[get_item](sql, params)
+        Args:
+            sql: The SQL query to execute.
+            params: The parameters to bind to the SQL query.
 
-    fn one_column[
-        T: FromSQL,
-    ](mut self, var sql: String, params: List[Tuple[String, Parameter]]) raises -> T:
+        Returns:
+            The value of the first column in the first row of the result set.
+
+        Raises:
+            Error: If the query fails or no rows are returned.
+        """
         fn get_item(row: Row) raises -> T:
             return row.get[T](0)
 
@@ -415,16 +383,16 @@ struct Connection(Movable):
 
     fn column_exists(
         self,
-        db_name: Optional[String],
-        table_name: String,
-        column_name: String,
+        table: String,
+        column: String,
+        db: Optional[String] = None,
     ) raises -> Bool:
-        """Check if `table_name`.`column_name` exists.
+        """Check if `table`.`column` exists.
 
         Args:
-            db_name: The database name (main, temp, ATTACH name), or None to search all databases.
-            table_name: The name of the table.
-            column_name: The name of the column.
+            table: The name of the table.
+            column: The name of the column.
+            db: The database name (main, temp, ATTACH name), or None to search all databases.
 
         Returns:
             True if the column exists, False otherwise.
@@ -432,18 +400,18 @@ struct Connection(Movable):
         Raises:
             Error: If the underlying SQLite call fails.
         """
-        return self.exists(db_name, table_name, column_name)
+        return self.exists(table=table, db=db, column=column)
 
     fn table_exists(
         self,
-        db_name: Optional[String],
-        table_name: String,
+        table: String,
+        db: Optional[String] = None,
     ) raises -> Bool:
-        """Check if `table_name` exists.
+        """Check if `table` exists.
 
         Args:
-            db_name: The database name (main, temp, ATTACH name), or None to search all databases.
-            table_name: The name of the table.
+            table: The name of the table.
+            db: The database name (main, temp, ATTACH name), or None to search all databases.
 
         Returns:
             True if the table exists, False otherwise.
@@ -451,20 +419,20 @@ struct Connection(Movable):
         Raises:
             Error: If the underlying SQLite call fails.
         """
-        return self.exists(db_name, table_name, None)
+        return self.exists(table=table, db=db)
 
     fn column_metadata(
         self,
-        var db_name: Optional[String],
-        var table_name: String,
-        var column_name: String,
+        var table: String,
+        var column: String,
+        var db: Optional[String] = None,
     ) raises -> ColumnMetadata:
         """Extract metadata of column at specified index.
 
         Args:
-            db_name: The database name (main, temp, ATTACH name), or None to search all databases.
-            table_name: The name of the table.
-            column_name: The name of the column.
+            table: The name of the table.
+            column: The name of the column.
+            db: The database name (main, temp, ATTACH name), or None to search all databases.
 
         Returns:
             `ColumnMetadata` containing:
@@ -486,9 +454,9 @@ struct Connection(Movable):
         self.raise_if_error(
             sqlite_ffi()[].table_column_metadata(
                 self.db.db,
-                db_name,
-                table_name,
-                column_name,
+                db,
+                table,
+                column,
                 data_type,
                 coll_seq,
                 not_null,
@@ -507,16 +475,16 @@ struct Connection(Movable):
 
     fn exists(
         self,
-        var db_name: Optional[String],
-        var table_name: String,
-        var column_name: Optional[String],
+        var table: String,
+        var db: Optional[String] = None,
+        var column: Optional[String] = None,
     ) raises -> Bool:
         """Check if a table or column exists.
 
         Args:
-            db_name: The database name or None.
-            table_name: The name of the table.
-            column_name: The name of the column, or None to check only table existence.
+            table: The name of the table.
+            db: The database name (main, temp, ATTACH name), or None to search all databases.
+            column: The name of the column, or None to check only table existence.
 
         Returns:
             True if the table/column exists, False otherwise.
@@ -526,9 +494,9 @@ struct Connection(Movable):
         """
         var r = sqlite_ffi()[].table_column_metadata(
             self.db.db,
-            db_name,
-            table_name,
-            column_name,
+            db,
+            table,
+            column,
             None,
             None,
             None,
@@ -536,9 +504,306 @@ struct Connection(Movable):
             None,
         )
 
-        if r == SQLite3Result.SQLITE_OK:
+        if r == SQLite3Result.OK:
             return True
-        elif r == SQLite3Result.SQLITE_ERROR:
+        elif r == SQLite3Result.ERROR:
             return False
         else:
             raise self.decode_error(r)
+
+    fn transaction(self, behavior: Optional[TransactionBehavior] = None) raises -> Transaction[origin_of(self)]:
+        """Begin a new transaction with the default behavior (DEFERRED).
+
+        The transaction defaults to rolling back when it is dropped. If you
+        want the transaction to commit, you must call `commit()` or
+        `set_drop_behavior(DropBehavior.COMMIT())`.
+
+        ## Example
+
+        ```mojo
+        from slight import Connection
+
+        fn perform_queries(mut conn: Connection) raises:
+            var tx = conn.transaction()
+
+            _ = tx.conn[].execute("INSERT INTO users (name) VALUES (?)", ["Alice"])
+            _ = tx.conn[].execute("INSERT INTO users (name) VALUES (?)", ["Bob"])
+
+            tx.commit()
+        ```
+
+        Returns:
+            A new Transaction object.
+
+        Raises:
+            Error: If the underlying SQLite call fails.
+        """
+        if behavior:
+            return Transaction(Pointer(to=self), behavior.value())
+        else:
+            return Transaction(Pointer(to=self))
+
+    fn savepoint(self, name: Optional[String] = None) raises -> Savepoint[origin_of(self)]:
+        """Begin a new savepoint with the default behavior (DEFERRED).
+
+        The savepoint defaults to rolling back when it is dropped. If you want
+        the savepoint to commit, you must call `commit()` or
+        `set_drop_behavior(DropBehavior.COMMIT())`.
+
+        ## Example
+
+        ```mojo
+        from slight import Connection
+        fn perform_queries(mut conn: Connection) raises:
+            var sp = conn.savepoint()
+
+            _ = sp.conn[].execute("INSERT INTO users (name) VALUES (?)", ["Alice"])
+            _ = sp.conn[].execute("INSERT INTO users (name) VALUES (?)", ["Bob"])
+
+            sp.commit()
+        ```
+
+        Returns:
+            A new Savepoint object.
+
+        Raises:
+            Error: If the underlying SQLite call fails.
+        """
+        if name:
+            return Savepoint(Pointer(to=self), name.value())
+        else:
+            return Savepoint(Pointer(to=self))
+
+    fn pragma_query_value[
+        T: Movable, //, transform: fn (Row) raises -> T,
+    ](
+        self,
+        pragma: String,
+        schema: Optional[String] = None,
+    ) raises -> T:
+        """Query the current value of a pragma.
+
+        Some pragmas will return multiple rows/values which cannot be retrieved
+        with this method. Use `pragma_query()` for those cases.
+
+        Prefer [PRAGMA function](https://sqlite.org/pragma.html#pragfunc) introduced in SQLite 3.20:
+        `SELECT user_version FROM pragma_user_version;`
+
+        ## Example
+
+        ```mojo
+        from slight import Connection
+        from slight.row import Row, Int
+
+        comptime dummy: Int = 0
+
+        fn get_int(r: Row) raises -> Int:
+            return r.get[Int](0)
+
+        fn main() raises:
+            var db = Connection.open_in_memory()
+            var user_version = db.pragma_query_value[transform=get_int]("user_version")
+            print(user_version)
+        ```
+
+        Parameters:
+            T: The return type.
+            transform: A function to transform the row into the desired type.
+
+        Args:
+            pragma: The name of the pragma.
+            schema: Optional schema name (e.g., "main", "temp").
+
+        Returns:
+            The value returned by the pragma.
+
+        Raises:
+            Error: If the underlying SQLite call fails.
+        """
+        var query = Sql()
+        query.push_pragma(pragma, schema)
+        return self.query_row[transform](String(query))
+
+    fn pragma_query[
+        callback: fn (Row) raises -> None
+    ](
+        self,
+        schema: Optional[String],
+        pragma: String,
+    ) raises:
+        """Query the current rows/values of a pragma.
+
+        Prefer [PRAGMA function](https://sqlite.org/pragma.html#pragfunc) introduced in SQLite 3.20:
+        `SELECT * FROM pragma_collation_list;`
+
+        ## Example
+
+        ```mojo
+        from slight import Connection
+        from slight.row import Row, String
+
+        fn print_collation(r: Row) raises:
+            var name = r.get[String](1)
+            print(name)
+
+        fn main() raises:
+            var db = Connection.open_in_memory()
+            db.pragma_query[print_collation](None, "collation_list")
+        ```
+
+        Parameters:
+            callback: A function to process each row.
+
+        Args:
+            schema: Optional schema name (e.g., "main", "temp").
+            pragma: The name of the pragma.
+
+        Raises:
+            Error: If the underlying SQLite call fails.
+        """
+        var query = Sql()
+        query.push_pragma(pragma, schema)
+        for row in self.prepare(String(query)).query():
+            callback(row)
+
+    fn pragma[
+        T: ToSQL, //, callback: fn (Row) raises -> None
+    ](
+        self,
+        pragma: StringSlice,
+        value: T,
+        schema: Optional[String] = None,
+    ) raises:
+        """Query the current value(s) of a pragma associated with a value.
+
+        This method can be used with query-only pragmas which need an argument
+        (e.g., `table_info('one_tbl')`) or pragmas which return value(s)
+        (e.g., `integrity_check`).
+
+        Prefer [PRAGMA function](https://sqlite.org/pragma.html#pragfunc) introduced in SQLite 3.20:
+        `SELECT * FROM pragma_table_info(?1);`
+
+        ## Example
+
+        ```mojo
+        from slight import Connection
+        from slight.row import Row, String
+
+        fn print_column(r: Row) raises:
+            var col = r.get[String](1)
+            print(col)
+
+        fn main() raises:
+            var db = Connection.open_in_memory()
+            db.pragma[print_column]("table_info", "sqlite_master")
+        ```
+
+        Parameters:
+            T: The type of the value argument.
+            callback: A function to process each row.
+
+        Args:
+            pragma: The name of the pragma.
+            value: The value argument for the pragma.
+            schema: Optional schema name (e.g., "main", "temp").
+
+        Raises:
+            Error: If the underlying SQLite call fails.
+        """
+        var sql = Sql()
+        sql.push_pragma(pragma, schema)
+        # The argument may be either in parentheses or separated by an equal sign
+        sql.open_brace()
+        sql.push_value(value)
+        sql.close_brace()
+        for row in self.prepare(String(sql)).query():
+            callback(row)
+
+    fn pragma_update[T: ToSQL, //](
+        self,
+        pragma: StringSlice,
+        value: T,
+        schema: Optional[String] = None,
+    ) raises:
+        """Set a new value to a pragma.
+
+        Some pragmas will return the updated value which cannot be retrieved
+        with this method. Use `pragma_update_and_check()` for those cases.
+
+        ## Example
+
+        ```mojo
+        from slight import Connection
+
+        fn main() raises:
+            var db = Connection.open_in_memory()
+            db.pragma_update("user_version", 1)
+        ```
+
+        Args:
+            pragma: The name of the pragma.
+            value: The new value for the pragma.
+            schema: Optional schema name (e.g., "main", "temp").
+
+        Raises:
+            Error: If the underlying SQLite call fails.
+        """
+        var sql = Sql()
+        sql.push_pragma(pragma, schema)
+        # The argument may be either in parentheses or separated by an equal sign
+        sql.push_equal_sign()
+        sql.push_value(value)
+        self.execute_batch(String(sql))
+
+    fn pragma_update_and_check[
+        T: Movable, V: ToSQL, //, transform: fn (Row) raises -> T
+    ](
+        self,
+        pragma: StringSlice,
+        value: V,
+        schema: Optional[String] = None,
+    ) raises -> T:
+        """Set a new value to a pragma and return the updated value.
+
+        Only a few pragmas automatically return the updated value.
+
+        ## Example
+
+        ```mojo
+        from slight import Connection
+        from slight.row import Row, String
+
+        fn get_string(r: Row) raises -> String:
+            return r.get[String](0)
+
+        fn main() raises:
+            var db = Connection.open_in_memory()
+            var mode = db.pragma_update_and_check[transform=get_string](
+                "journal_mode", "OFF"
+            )
+            print(mode)
+        ```
+
+        Parameters:
+            T: The return type.
+            V: The type of the value argument.
+            transform: A function to transform the row into the desired type.
+
+        Args:
+            pragma: The name of the pragma.
+            value: The new value for the pragma.
+            schema: Optional schema name (e.g., "main", "temp").
+
+        Returns:
+            The value returned by the pragma after update.
+
+        Raises:
+            Error: If the underlying SQLite call fails.
+        """
+        var sql = Sql()
+        sql.push_pragma(pragma, schema)
+        # The argument may be either in parentheses or separated by an equal sign
+        sql.push_equal_sign()
+        sql.push_value(value)
+        return self.query_row[transform](String(sql))
+

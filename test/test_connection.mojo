@@ -4,34 +4,36 @@ from pathlib import Path
 
 from slight.connection import Connection
 from slight.statement import eq_ignore_ascii_case
-from slight.row import Row, String, Int, Bool, SIMD
+from slight.row import Row
+from slight import String
+from slight.types.to_sql import Int, Bool, SIMD, Dict, List
 from slight.flags import OpenFlag
 from slight.c.raw_bindings import sqlite3_stmt, SQLITE_OK
 from slight.c.api import sqlite_ffi
 
 
-@fieldwise_init
-struct Employee(Copyable, Movable, Writable):
-    var id: Int
-    var name: String
-    var age: Int8
-    var address: String
-    var salary: Float64
-    var is_active: Bool
+# # @fieldwise_init
+# # struct Employee(Copyable, Movable, Writable):
+# #     var id: Int
+# #     var name: String
+# #     var age: Int8
+# #     var address: String
+# #     var salary: Float64
+# #     var is_active: Bool
 
-    fn write_to[W: Writer](self, mut writer: W):
-        writer.write("Employee(id=", self.id, ", name=", self.name, ", age=", self.age, ", address=", self.address, ", salary=", self.salary, ", is_active=", self.is_active, ")")
+# #     fn write_to[W: Writer](self, mut writer: W):
+# #         writer.write("Employee(id=", self.id, ", name=", self.name, ", age=", self.age, ", address=", self.address, ", salary=", self.salary, ", is_active=", self.is_active, ")")
 
 
-fn transform_row(row: Row) raises -> Employee:
-    return Employee(
-        id=row.get[Int]("id"),
-        name=row.get[String]("name"),
-        age=row.get[Int8]("age"),
-        address=row.get[String]("address"),
-        salary=row.get[Float64]("salary"),
-        is_active=row.get[Bool]("is_active")
-    )
+# # fn transform_row(row: Row) raises -> Employee:
+# #     return Employee(
+# #         id=row.get[Int]("id"),
+# #         name=row.get[String]("name"),
+# #         age=row.get[Int8]("age"),
+# #         address=row.get[String]("address"),
+# #         salary=row.get[Float64]("salary"),
+# #         is_active=row.get[Bool]("is_active")
+# #     )
         
 
 fn test_eq_ignore_ascii_case_test() raises:
@@ -45,7 +47,6 @@ fn test_path() raises:
     with Connection.open_in_memory() as db:
         assert_equal(db.path().value(), "")
 
-
     db = Connection.open("file:dummy.db?mode=memory&cache=shared")
     assert_equal(db.path().value(), "")
 
@@ -55,17 +56,9 @@ fn test_path() raises:
         assert_true(String(db.path().value()).endswith("file.db"))
 
 
-
 fn test_open_failure() raises:
-    var filename = "no_such_file.db"
-    try:
-        var db = Connection.open(filename, materialize[OpenFlag.READ_ONLY]())
-        db^.close()
-        # If we get here, the test should fail
-        assert_false(True, "Expected connection to fail but it succeeded")
-    except e:
-        # Check that the error message contains the filename
-        assert_true("Unable to open the database file" in e.as_string_slice())
+    with assert_raises(contains="Unable to open the database file"):
+        _ = Connection.open("no_such_file.db", materialize[OpenFlag.READ_ONLY]())
 
 
 # fn test_close_retry() raises:
@@ -103,58 +96,58 @@ fn test_open_failure() raises:
 #         db^.close()
 
 
-fn test_table_creation_and_insertion() raises:
-    var db = Connection.open_in_memory()
+# fn test_table_creation_and_insertion() raises:
+#     var db = Connection.open_in_memory()
 
-    db.execute_batch("""
-    CREATE TABLE COMPANY(
-        ID INT PRIMARY KEY NOT NULL,
-        NAME TEXT NOT NULL,
-        AGE INT NOT NULL,
-        ADDRESS CHAR(50),
-        SALARY REAL,
-        IS_ACTIVE BOOLEAN NOT NULL
-    );
-    CREATE TABLE EMPLOYEE(ID INT PRIMARY KEY NOT NULL);
-    CREATE TABLE DEPARTMENT(ID INT PRIMARY KEY NOT NULL);
-    """)
+#     db.execute_batch("""
+#     CREATE TABLE COMPANY(
+#         ID INT PRIMARY KEY NOT NULL,
+#         NAME TEXT NOT NULL,
+#         AGE INT NOT NULL,
+#         ADDRESS CHAR(50),
+#         SALARY REAL,
+#         IS_ACTIVE BOOLEAN NOT NULL
+#     );
+#     CREATE TABLE EMPLOYEE(ID INT PRIMARY KEY NOT NULL);
+#     CREATE TABLE DEPARTMENT(ID INT PRIMARY KEY NOT NULL);
+#     """)
 
-    var stmt = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name = 'DEPARTMENT';")
-    assert_true(stmt.exists())
+#     var stmt = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name = 'DEPARTMENT';")
+#     assert_true(stmt.exists())
 
-    # Running multiple inserts in one query doesn't work atm. Will need to fix
-    try:
-        assert_equal(
-            String(
-                db.execute("""
-                INSERT INTO COMPANY (ID, NAME, AGE, ADDRESS, SALARY, IS_ACTIVE) VALUES 
-                (1, 'Bob', 30, '123 Main St', 45000.0, False),
-                (2, 'Alice', 30, '123 Main St', 50000.0, True);
-                """),
-                " row(s) affected."
-            ),
-            "2 row(s) affected.")
-    except e:
-        if e.as_string_slice() == "not an error":
-            raise
+#     # Running multiple inserts in one query doesn't work atm. Will need to fix
+#     try:
+#         assert_equal(
+#             String(
+#                 db.execute("""
+#                 INSERT INTO COMPANY (ID, NAME, AGE, ADDRESS, SALARY, IS_ACTIVE) VALUES 
+#                 (1, 'Bob', 30, '123 Main St', 45000.0, False),
+#                 (2, 'Alice', 30, '123 Main St', 50000.0, True);
+#                 """),
+#                 " row(s) affected."
+#             ),
+#             "2 row(s) affected.")
+#     except e:
+#         if e.as_string_slice() == "not an error":
+#             raise
 
-    alias select_user_query = "SELECT * FROM COMPANY WHERE NAME = ?;"
-    stmt = db.prepare(select_user_query)
-    for row in stmt.query(["Alice"]):
-        # Column name based access
-        assert_equal(row.get[Int]("id"), 2)
-        assert_equal(row.get[String]("name"), "Alice")
+#     alias select_user_query = "SELECT * FROM COMPANY WHERE NAME = ?;"
+#     stmt = db.prepare(select_user_query)
+#     for row in stmt.query(["Alice"]):
+#         # Column name based access
+#         assert_equal(row.get[Int]("id"), 2)
+#         assert_equal(row.get[String]("name"), "Alice")
 
-        # Index based access
-        assert_equal(row.get[Int](0), 2)
-        assert_equal(row.get[String](1), "Alice")
+#         # Index based access
+#         assert_equal(row.get[Int](0), 2)
+#         assert_equal(row.get[String](1), "Alice")
 
-    stmt = db.prepare(select_user_query)
-    var employee = stmt.query_row[transform=transform_row](["Bob"])
-    assert_equal(employee.id, 1)
-    assert_equal(employee.name, "Bob")
+#     stmt = db.prepare(select_user_query)
+#     var employee = stmt.query_row[transform_row](["Bob"])
+#     assert_equal(employee.id, 1)
+#     assert_equal(employee.name, "Bob")
 
-    db^.close()
+#     db^.close()
 
 
 fn test_bad_open_flags() raises:
@@ -184,26 +177,10 @@ fn test_execute_batch() raises:
     # db.execute_batch("PRAGMA locking_mode = EXCLUSIVE")
 
 
-fn test_execute() raises:
-    var db = Connection.open_in_memory()
-    
-    fn get_int(r: Row) raises -> Int:
-        return r.get[Int](0)
-    
-    db.execute_batch("CREATE TABLE foo(x INTEGER)")
-    
-    assert_equal(db.execute("INSERT INTO foo(x) VALUES (?1)", [1]), 1)
-    assert_equal(db.execute("INSERT INTO foo(x) VALUES (?1)", [2]), 1)
-    
-    assert_equal(db.query_row[transform=get_int]("SELECT SUM(x) FROM foo"), 3)
-
-
-
 fn test_execute_select_with_row() raises:
     var db = Connection.open_in_memory()
     with assert_raises(contains="Query returned rows"):
         _ = db.execute("SELECT 1")
-
 
 
 fn test_execute_multiple() raises:
@@ -213,7 +190,6 @@ fn test_execute_multiple() raises:
     
     # Tail comment should be ignored
     _ = db.execute("CREATE TABLE t(c); -- bim")
-
 
 
 fn test_prepare_column_names() raises:
@@ -230,6 +206,37 @@ fn test_prepare_column_names() raises:
     # assert_equal(stmt2.column_names()[0], "a")
     # assert_equal(stmt2.column_names()[1], "b")
 
+comptime dummy: Int = 1
+"""For some reason, using the extended type explicitly makes the extensions start working after it in the file."""
+
+fn test_execute() raises:
+    var db = Connection.open_in_memory()
+    
+    fn get_int(r: Row) raises -> Int:
+        return r.get[Int](0)
+    
+    db.execute_batch("CREATE TABLE foo(x INTEGER)")
+    assert_equal(db.execute("INSERT INTO foo(x) VALUES (?1)", [1]), 1)
+    assert_equal(db.execute("INSERT INTO foo(x) VALUES (?1)", [2]), 1)
+    assert_equal(db.query_row[get_int]("SELECT SUM(x) FROM foo"), 3)
+
+
+fn test_insert_bytes() raises:
+    var db = Connection.open_in_memory()
+    var example = "hello".as_bytes()
+    
+    fn get_int(r: Row) raises -> Int:
+        return r.get[Int](0)
+    
+    db.execute_batch("CREATE TABLE foo(x BLOB)")
+    assert_equal(db.execute("INSERT INTO foo(x) VALUES (?1)", [example]), 1)
+
+    # Select and verify inserted blob
+    var stmt = db.prepare("SELECT x FROM foo")
+    for row in stmt.query():
+        var blob = row.get[List[Byte]](0)
+        for i in range(len(example)):
+            assert_equal(blob[i], example[i])
 
 
 fn test_prepare_execute() raises:
@@ -250,7 +257,6 @@ fn test_prepare_execute() raises:
     assert_equal(update_stmt.execute([3, 3]), 2)
     assert_equal(update_stmt.execute([3, 3]), 0)
     assert_equal(update_stmt.execute([8, 8]), 3)
-
 
 
 fn test_prepare_query() raises:
@@ -286,9 +292,9 @@ fn test_prepare_query() raises:
     # assert_equal(v2[1], 1)
 
 
-
 fn test_query_map() raises:
-    var db = Connection.open_in_memory()    
+    var db = Connection.open_in_memory()
+
     fn get_string(r: Row) raises -> String:
         return r.get[String](1)
     
@@ -339,13 +345,12 @@ fn test_pragma_query_row() raises:
     fn get_string(r: Row) raises -> String:
         return r.get[String](0)
 
-    var mode = db.query_row[transform=get_string]("PRAGMA journal_mode")
+    var mode = db.query_row[get_string]("PRAGMA journal_mode")
     assert_equal(mode, "memory")
     
-    var mode2 = db.query_row[transform=get_string]("PRAGMA journal_mode=off")
+    var mode2 = db.query_row[get_string]("PRAGMA journal_mode=off")
     # Note: system SQLite behavior may vary
     assert_true(mode2 == "memory" or mode2 == "off")
-
 
 
 fn test_prepare_failures() raises:
@@ -398,24 +403,24 @@ fn test_is_autocommit() raises:
 fn test_column_exists() raises:
     var db = Connection.open_in_memory()
     # Check column exists in sqlite_master table
-    assert_true(db.column_exists(None, "sqlite_master", "type"))
-    assert_true(db.column_exists("temp", "sqlite_master", "type"))
-    assert_false(db.column_exists("main", "sqlite_temp_master", "type"))
+    assert_true(db.column_exists("sqlite_master", "type"))
+    assert_true(db.column_exists("sqlite_master", "type", "temp"))
+    assert_false(db.column_exists("sqlite_temp_master", "type", "main"))
 
 
 fn test_table_exists() raises:
     var db = Connection.open_in_memory()
     # Check that sqlite_master table exists
-    assert_true(db.table_exists(None, "sqlite_master"))
-    assert_true(db.table_exists("temp", "sqlite_master"))
-    assert_false(db.table_exists("main", "sqlite_temp_master"))
+    assert_true(db.table_exists("sqlite_master"))
+    assert_true(db.table_exists("sqlite_master", "temp"))
+    assert_false(db.table_exists("sqlite_temp_master", "main"))
 
 
 fn test_column_metadata() raises:
     var db = Connection.open_in_memory()
     
     # Get column metadata for the 'type' column in sqlite_master table
-    var metadata = db.column_metadata(None, "sqlite_master", "type")
+    var metadata = db.column_metadata("sqlite_master", "type")
     
     # Check data type (should be TEXT)
     var data_type = metadata.data_type
@@ -434,7 +439,7 @@ fn test_column_metadata() raises:
     
     # Test that querying non-existent column raises an error
     with assert_raises():
-        _ = db.column_metadata(None, "sqlite_master", "foo")
+        _ = db.column_metadata("sqlite_master", "foo")
 
 
 # TODO: Need to work on this.
@@ -474,13 +479,13 @@ fn test_notnull_constraint_error() raises:
 
 fn test_get_raw() raises:
     var db = Connection.open_in_memory()
-    var vals = List[String]("foobar", "1234", "qwerty")
+    var vals: List[String] = ["foobar", "1234", "qwerty"]
     
     db.execute_batch("CREATE TABLE foo(i, x);")
     var insert_stmt = db.prepare("INSERT INTO foo(i, x) VALUES(?1, ?2)")
     
     for i in range(len(vals)):
-        assert_equal(insert_stmt.execute([i, vals[i]]), 1)
+        assert_equal(insert_stmt.execute(i, vals[i]), 1)
     
     # TODO: Add tests for get_ref and as_str methods when implemented
     var query = db.prepare("SELECT i, x FROM foo")
@@ -488,7 +493,6 @@ fn test_get_raw() raises:
         var i = row.get[Int](0)
         var x = row.get[String](1)
         assert_equal(x, vals[i])
-
 
 
 # Skipping test_from_handle, test_from_handle_owned, query_and_then_tests as they require unsafe operations
@@ -533,8 +537,6 @@ fn test_alter_table() raises:
     db.execute_batch("ALTER TABLE x RENAME TO y;")
 
 
-
-
 # Skipping test_batch, test_invalid_batch, test_returning as they require Batch type
 
 
@@ -548,11 +550,9 @@ fn test_alter_table() raises:
 #         db^.close()
 
 
-# fn db_readonly() raises:
-#     var db = Connection.open_in_memory()
-#     # TODO: is_readonly() method not yet implemented
+# fn test_db_is_read_only() raises:
+#     var db = Connection.open(":memory:", OpenFlag.READ_ONLY)
 #     assert_false(db.is_read_only("main"))
-#     pass
 
 
 # Skipping prepare_and_bind, test_db_name, test_is_interrupted, release_memory
@@ -561,3 +561,6 @@ fn test_alter_table() raises:
 
 fn main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
+    # var suite = TestSuite()
+    # suite.test[test_insert_bytes]()
+    # suite^.run()

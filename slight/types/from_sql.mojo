@@ -1,7 +1,8 @@
+from sys.intrinsics import _type_is_eq_parse_time
 from slight.types.value_ref import ValueRef
 
 
-trait FromSQL(Copyable, Movable):
+trait FromSQL(Copyable):
     """A trait for types that can be constructed from a SQL value."""
 
     fn __init__(out self, value: ValueRef) raises:
@@ -13,8 +14,7 @@ __extension Int(FromSQL):
         self = Self(value.as_int64())
 
 
-# __extension Optional(FromSQL) where T: FromSQL:
-
+# __extension Optional(FromSQL):
 #     fn __init__(out self: Self, value: ValueRef) raises:
 #         self = Self(T(value.as_int64()))
 
@@ -22,6 +22,12 @@ __extension Int(FromSQL):
 __extension String(FromSQL):
     fn __init__(out self, value: ValueRef) raises:
         self = Self(value.as_string_slice())
+
+
+# __extension StringSlice(FromSQL):
+#     fn __init__(out self, value: ValueRef[Self.origin]) raises:
+#         var val = value.as_string_slice()
+#         self = val
 
 
 __extension Bool(FromSQL):
@@ -37,19 +43,17 @@ __extension NoneType(FromSQL):
 __extension SIMD(FromSQL):
     fn __init__(out self, value: ValueRef) raises:
         @parameter
-        if dtype == DType.int8:
-            self = Scalar[dtype](value.as_int64())
-        elif dtype == DType.int16:
-            self = Scalar[dtype](value.as_int64())
-        elif dtype == DType.int32:
-            self = Scalar[dtype](value.as_int64())
-        elif dtype == DType.int64:
-            self = Scalar[dtype](value.as_int64())
-        elif dtype == DType.float16:
+        if dtype in (DType.float16, DType.float32, DType.float64):
             self = Scalar[dtype](value.as_float64())
-        elif dtype == DType.float32:
-            self = Scalar[dtype](value.as_float64())
-        elif dtype == DType.float64:
-            self = Scalar[dtype](value.as_float64())
+        elif dtype in (DType.int8, DType.int16, DType.int32, DType.int64,
+                       DType.uint, DType.uint8, DType.uint16, DType.uint32, DType.uint64):
+            self = Scalar[dtype](value.as_int64())
         else:
-            raise Error("InvalidColumnType: Unsupported SIMD dtype")
+            raise Error("InvalidColumnTypeError: Unsupported value type")
+
+
+__extension List(FromSQL):
+    fn __init__(out self, value: ValueRef) raises where _type_is_eq_parse_time[
+        Self.T, Byte
+    ]():
+        self = Self(value.as_blob())
